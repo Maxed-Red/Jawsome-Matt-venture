@@ -3,35 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sharkboy 2D Side‑Scroller (GitHub‑ready)</title>
+  <title>Sharkboy 2D Side-Scroller</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#92d4ff; font-family: system-ui, sans-serif; }
-    #ui { position: absolute; inset: 10px auto auto 10px; background: rgba(255,255,255,.9); padding: 10px 12px; border-radius: 10px; }
+    html, body { height: 100%; margin: 0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
     #game { display:block; width:100vw; height:100vh; }
-    #log { font-size:12px; opacity:.9; margin-top:6px; max-width: 520px; white-space: pre-wrap; }
     #touch { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: 64px 64px; grid-gap: 10px; }
     #touch button{ width:64px; height:64px; border-radius:999px; border:none; box-shadow:0 2px 6px rgba(0,0,0,.2); background:#ffffffcc; font-size:18px }
-    code { background: #f3f3f3; padding:2px 4px; border-radius:4px }
+    #startScreen {
+      position: fixed; inset: 0;
+      background: #92d4ff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: opacity 0.8s ease;
+      z-index: 10;
+    }
+    #startScreen img { max-width: 60%; height: auto; }
+    #startScreen button {
+      margin-top: 20px; padding: 10px 20px;
+      font-size: 20px; border: none; border-radius: 8px;
+      background: #007bff; color: white; cursor: pointer;
+    }
+    #startScreen.hidden { opacity: 0; pointer-events: none; }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
-  <div id="ui">
-    <b>Sharkboy 2D Side‑Scroller</b><br>
-    Left/Right = move • Space/Up = jump • Down = crouch • R = restart • L = next level
-    <div style="margin-top:6px; font-size:12px">
-      <div><b>GitHub asset paths:</b> place your sprites at <code>assets/shark-idle.png</code>, <code>assets/shark-running.png</code>, <code>assets/shark-ducking.png</code>.</div>
-      <div>You can also override below for quick tests:</div>
-      <label>Idle <input id="idleFile" type="file" accept="image/*" /></label>
-      <label>Running <input id="runFile" type="file" accept="image/*" /></label>
-      <label>Ducking <input id="duckFile" type="file" accept="image/*" /></label>
-    </div>
-    <div id="log">Preparing…</div>
-  </div>
+
   <div id="touch" aria-hidden="true">
     <button id="btnLeft">⟵</button>
     <button id="btnRight">⟶</button>
     <button id="btnJump" style="grid-column: span 2">⤒</button>
+  </div>
+
+  <!-- Start Screen -->
+  <div id="startScreen">
+    <img src="matt-loading.png" alt="Loading...">
+    <button id="startButton">Start Game</button>
   </div>
 
   <script>
@@ -41,9 +47,7 @@
   function resize(){ cvs.width = innerWidth; cvs.height = innerHeight; }
   addEventListener('resize', resize); resize();
 
-  // ================= Assets (GitHub‑ready) =================
-  // Expect three individual PNGs in ./assets . If they don't exist in this environment,
-  // we provide a generated fallback, but in your GitHub repo these WILL load.
+  // ================= Assets =================
   const SPRITES = { idle:null, run:null, duck:null };
 
   async function loadImage(url){
@@ -54,9 +58,7 @@
     try { SPRITES.run  = await loadImage('assets/shark-running.png'); } catch {}
     try { SPRITES.duck = await loadImage('assets/shark-ducking.png'); } catch {}
 
-    // If any missing, create simple fallbacks so tests/game still function
     for (const k of ['idle','run','duck']) if (!SPRITES[k]) SPRITES[k] = genFallback(k);
-    log('Sprites ready. If you are testing locally without assets/, use the file pickers above.');
   }
 
   function genFallback(kind){
@@ -64,14 +66,6 @@
     g.fillStyle = kind==='idle'?'#556': kind==='run'?'#5a86ff':'#ff6a6a';
     g.fillRect(0,0,c.width,c.height); g.fillStyle='white'; g.font='12px system-ui'; g.fillText(kind,6,16);
     return c;
-  }
-
-  // File picker overrides
-  const picks = { idleFile:'idle', runFile:'run', duckFile:'duck' };
-  for (const [id,key] of Object.entries(picks)){
-    document.getElementById(id).addEventListener('change', async (e)=>{
-      const f=e.target.files?.[0]; if(!f) return; const url=URL.createObjectURL(f); const img=new Image(); img.src=url; await img.decode(); SPRITES[key]=img; log(`Replaced ${key} sprite from file picker.`);
-    });
   }
 
   // ================= Controls =================
@@ -108,14 +102,9 @@
   }
 
   // ================= Physics & Player =================
-  const G = 2000;        // gravity px/s^2
-  const MAX_DX = 360;    // run speed
-  const JUMP_VY = 700;   // jump impulse
-  const accel = 1800;    // horizontal accel
-
+  const G = 2000, MAX_DX = 360, JUMP_VY = 700, accel = 1800;
   const player = { x:80, y:0, w:48, h:72, dx:0, dy:0, onGround:false, facing:1, animTime:0, state:'idle' };
 
-  // ================= Levels (5) =================
   const levels = [
     { platforms:[ {x:-200,y:420,w:800,h:40}, {x:700,y:420,w:600,h:40}, {x:1400,y:420,w:600,h:40}, {x:560,y:340,w:160,h:20}, {x:1040,y:320,w:160,h:20}, {x:1680,y:300,w:160,h:20} ], goal:{x:1950,y:320,w:30,h:140}, hazards:[] },
     { platforms:[ {x:-200,y:420,w:500,h:40}, {x:450,y:420,w:280,h:40}, {x:860,y:420,w:260,h:40}, {x:1240,y:420,w:300,h:40}, {x:1580,y:420,w:420,h:40}, {x:2050,y:360,w:180,h:20} ], goal:{x:2280,y:280,w:30,h:140}, hazards:[ {x:760,y:402,w:60,h:18}, {x:1140,y:402,w:60,h:18} ] },
@@ -133,47 +122,30 @@
     cam.x = 0; cam.y = 0;
   }
 
-  function nextLevel(){ loadLevel(levelIndex+1); }
-
-  function log(msg){ document.getElementById('log').innerText = msg; }
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
-  // ================= Update & Physics =================
   function update(dt){
     if (keys.restart){ loadLevel(levelIndex); keys.restart=false; }
-    if (keys.next){ nextLevel(); keys.next=false; }
+    if (keys.next){ loadLevel(levelIndex+1); keys.next=false; }
 
-    // horizontal input
     if (keys.left)  { player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing = -1; }
     if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
     if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
 
-    // gravity + jump
     player.dy += G*dt;
     if (player.onGround && keys.jump){ player.dy = -JUMP_VY; player.onGround=false; }
     keys.jump = false;
 
-    // crouch state (no collider change yet, just pose)
     const crouching = keys.down && player.onGround;
+    moveAndCollide(dt, levels[levelIndex].platforms);
 
-    // integrate & collide
-    const L = levels[levelIndex];
-    moveAndCollide(dt, L.platforms);
-
-    // hazards
     const pbox = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
-    if (L.hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
-
-    // goal
-    if (aabb(pbox, L.goal)) nextLevel();
-
-    // auto reset when falling off screen
+    if (levels[levelIndex].hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
+    if (aabb(pbox, levels[levelIndex].goal)) loadLevel(levelIndex+1);
     if (player.y > cvs.height + 200) loadLevel(levelIndex);
 
-    // camera follow
     const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
 
-    // animation state
     if (crouching) player.state = 'duck';
     else if (!player.onGround) player.state = 'air';
     else if (Math.abs(player.dx) > 40) player.state = 'run';
@@ -199,29 +171,20 @@
     }
   }
 
-  // ================= Render =================
   function draw(){
     ctx.clearRect(0,0,cvs.width,cvs.height);
     const grd = ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle = grd; ctx.fillRect(0,0,cvs.width,cvs.height);
 
     ctx.save(); ctx.translate(-cam.x, 0);
-
     const L = levels[levelIndex];
     for (const p of L.platforms){ ctx.fillStyle = '#75c46a'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle='#4a8f42'; ctx.fillRect(p.x, p.y+ p.h-6, p.w, 6); }
     for (const s of L.hazards){ drawSpikeStrip(s.x, s.y, s.w, s.h); }
 
-    // goal flag
     const g = L.goal; ctx.fillStyle = '#ffcc00'; ctx.fillRect(g.x, g.y, 6, g.h);
     ctx.fillStyle = '#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6, g.y+8); ctx.lineTo(g.x+6+36, g.y+18); ctx.lineTo(g.x+6, g.y+28); ctx.closePath(); ctx.fill();
 
-    // player sprite
     drawPlayerSprite(player.x, player.y, player.facing, player.state, player.animTime);
-
     ctx.restore();
-
-    // HUD
-    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(0,0,260,26);
-    ctx.fillStyle = 'white'; ctx.font = '12px system-ui, sans-serif'; ctx.fillText(`Lvl ${levelIndex+1}/${levels.length}  x:${player.x|0} y:${(player.y|0)} dx:${player.dx|0} dy:${player.dy|0}`, 8, 16);
   }
 
   function drawSpikeStrip(x,y,w,h){
@@ -231,33 +194,27 @@
     }
   }
 
-  // Draw with three individual sprites. When jumping, use the running sprite as requested.
-  function drawPlayerSprite(px, py, facing, state, t){
+  function drawPlayerSprite(px, py, facing, state){
     let img = SPRITES.idle;
-    if (state==='run' || state==='air') img = SPRITES.run; // use running for jump as well
+    if (state==='run' || state==='air') img = SPRITES.run;
     else if (state==='duck') img = SPRITES.duck;
-
-    const fw = img.naturalWidth || img.width; // support Canvas fallback
+    const fw = img.naturalWidth || img.width;
     const fh = img.naturalHeight || img.height;
-
     ctx.save(); ctx.translate(px, py); ctx.scale(facing, 1); ctx.translate(-fw/2, -fh); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, 0, 0); ctx.restore();
   }
 
-  // ================= Main Boot & Loop =================
   let lastTs;
   async function boot(){
     await ensureSprites();
-    // ---- tests ----
-    const logEl = document.getElementById('log');
-    function test(name, fn){ try{ fn(); logEl.innerHTML += `\n✔ ${name}`; } catch(e){ logEl.innerHTML += `\n✖ ${name} — ${e.message}`; console.error(e); } }
-    test('sprites available', ()=>{ if (!SPRITES.idle || !SPRITES.run || !SPRITES.duck) throw new Error('sprites missing'); });
-    test('fall resets', ()=>{ const y=player.y; player.y=9999; update(0.016); });
-
     loadLevel(0);
     requestAnimationFrame(loop);
   }
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
-  boot();
+
+  document.getElementById('startButton').addEventListener('click', ()=>{
+    document.getElementById('startScreen').classList.add('hidden');
+    setTimeout(boot, 800); // wait for fade out
+  });
 
   </script>
 </body>
