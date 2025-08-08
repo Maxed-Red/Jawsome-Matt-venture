@@ -21,11 +21,10 @@
       transition: opacity 0.8s ease;
       z-index: 10;
     }
-    #startScreen img { max-width: 60%; height: auto; }
-    #startScreen button {
-      margin-top: 20px; padding: 10px 20px;
-      font-size: 20px; border: none; border-radius: 8px;
-      background: #007bff; color: white; cursor: pointer;
+    #startScreen img {
+      max-width: 90%;
+      max-height: 80vh;
+      cursor: pointer;
     }
     #startScreen.hidden { opacity: 0; pointer-events: none; }
   </style>
@@ -42,8 +41,7 @@
 
   <!-- Start Screen -->
   <div id="startScreen">
-    <img src="assets/matt-loading.png" alt="Loading...">
-    <button id="startButton">Start Game</button>
+    <img id="startImage" src="assets/matt-loading.png" alt="Loading...">
   </div>
 
   <script>
@@ -149,7 +147,6 @@
     if (levels[levelIndex].hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
     if (aabb(pbox, levels[levelIndex].goal)) loadLevel(levelIndex+1);
 
-    // bigger fall buffer
     if (player.y > cvs.height + 600) loadLevel(levelIndex);
 
     const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
@@ -216,7 +213,8 @@
   }
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
 
-  document.getElementById('startButton').addEventListener('click', ()=>{
+  // Clicking the image starts the game
+  document.getElementById('startImage').addEventListener('click', ()=>{
     document.getElementById('startScreen').classList.add('hidden');
     setTimeout(boot, 800);
   });
