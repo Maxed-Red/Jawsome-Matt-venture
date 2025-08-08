@@ -216,32 +216,56 @@
   }
 
   function moveAndCollide(dt, solids){
-    if (player.onLadder){
-      player.dy = 0;
-      if (keys.upIntent) player.y -= CLIMB_SPEED * dt;
-      if (keys.downIntent) player.y += CLIMB_SPEED * dt;
-    } else {
-      player.y += player.dy * dt;
-    }
-    player.x += player.dx * dt;
-    collideAxis('x', solids);
-    player.onGround=false;
-    collideAxis('y', solids);
+  // 1) Horizontal first
+  player.x += player.dx * dt;
+  collideAxis('x', solids);
+
+  // 2) Vertical second (ladder overrides gravity motion)
+  if (player.onLadder){
+    let vy = 0;
+    if (keys.upIntent) vy -= CLIMB_SPEED;
+    if (keys.downIntent) vy += CLIMB_SPEED;
+    player.y += vy * dt;
+    player.dy = 0; // no gravity while climbing
+  } else {
+    player.y += player.dy * dt;
   }
 
-  function collideAxis(axis, solids){
-    const box = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
-    for (const s of solids){
-      if (!aabb(box, s)) continue;
-      if (axis==='x'){
-        if (player.dx>0){ box.x = s.x - box.w; player.x = box.x + player.w/2; player.dx = 0; }
-        else if (player.dx<0){ box.x = s.x + s.w; player.x = box.x + player.w/2; player.dx = 0; }
-      } else {
-        if (player.dy>0){ box.y = s.y - box.h; player.y = box.y + player.h; player.dy = 0; player.onGround = true; }
-        else if (player.dy<0){ box.y = s.y + s.h; player.y = box.y + player.h; player.dy = 0; }
+  player.onGround = false;
+  collideAxis('y', solids);
+}
+
+function collideAxis(axis, solids){
+  // Tiny vertical inset during X checks to avoid floor grazing causing X snaps
+  const inset = (axis === 'x') ? 1 : 0;
+  const box = {
+    x: player.x - player.w/2,
+    y: player.y - player.h + inset,
+    w: player.w,
+    h: player.h - inset*2
+  };
+
+  for (const s of solids){
+    // AABB test
+    if (!(box.x < s.x + s.w && box.x + box.w > s.x &&
+          box.y < s.y + s.h && box.y + box.h > s.y)) continue;
+
+    if (axis === 'x'){
+      if (player.dx > 0){ // moving right -> snap to left side of solid
+        box.x = s.x - box.w; player.x = box.x + player.w/2; player.dx = 0;
+      } else if (player.dx < 0){ // moving left -> snap to right side
+        box.x = s.x + s.w; player.x = box.x + player.w/2; player.dx = 0;
+      }
+    } else { // axis === 'y'
+      if (player.dy > 0){ // falling -> land on top
+        box.y = s.y - box.h; player.y = box.y + player.h; player.dy = 0; player.onGround = true;
+      } else if (player.dy < 0){ // moving up -> hit head
+        box.y = s.y + s.h; player.y = box.y + player.h; player.dy = 0;
       }
     }
   }
+}
+
 
   function update(dt){
     if (showCredits){
