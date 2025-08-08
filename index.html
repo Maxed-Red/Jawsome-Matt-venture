@@ -7,8 +7,12 @@
   <style>
     html, body { height: 100%; margin: 0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
     #game { display:block; width:100vw; height:100vh; }
-    #touch { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: 64px 64px; grid-gap: 10px; }
+
+    /* Touch controls */
+    #touch { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: 64px 64px; grid-gap: 10px; z-index: 5; }
     #touch button{ width:64px; height:64px; border-radius:999px; border:none; box-shadow:0 2px 6px rgba(0,0,0,.2); background:#ffffffcc; font-size:18px }
+
+    /* Start Screen */
     #startScreen {
       position: fixed; inset: 0;
       background: #92d4ff;
@@ -28,6 +32,7 @@
 <body>
   <canvas id="game"></canvas>
 
+  <!-- Touch controls -->
   <div id="touch" aria-hidden="true">
     <button id="btnLeft">⟵</button>
     <button id="btnRight">⟶</button>
@@ -51,16 +56,14 @@
   const SPRITES = { idle:null, run:null, duck:null };
 
   async function loadImage(url){
-    const img = new Image(); img.decoding = 'async'; img.src = url; await img.decode(); return img; }
-
+    const img = new Image(); img.decoding = 'async'; img.src = url; await img.decode(); return img;
+  }
   async function ensureSprites(){
     try { SPRITES.idle = await loadImage('assets/shark-idle.png'); } catch {}
     try { SPRITES.run  = await loadImage('assets/shark-running.png'); } catch {}
     try { SPRITES.duck = await loadImage('assets/shark-ducking.png'); } catch {}
-
     for (const k of ['idle','run','duck']) if (!SPRITES[k]) SPRITES[k] = genFallback(k);
   }
-
   function genFallback(kind){
     const c=document.createElement('canvas'); c.width=64; c.height=96; const g=c.getContext('2d');
     g.fillStyle = kind==='idle'?'#556': kind==='run'?'#5a86ff':'#ff6a6a';
@@ -121,7 +124,6 @@
     player.x = L.platforms[0].x + 80; player.y = 0; player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
     cam.x = 0; cam.y = 0;
   }
-
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
   function update(dt){
@@ -152,7 +154,6 @@
     else player.state = 'idle';
     player.animTime += dt;
   }
-
   function moveAndCollide(dt, solids){
     player.x += player.dx * dt; collideAxis('x', solids);
     player.y += player.dy * dt; player.onGround = false; collideAxis('y', solids);
@@ -183,17 +184,15 @@
     const g = L.goal; ctx.fillStyle = '#ffcc00'; ctx.fillRect(g.x, g.y, 6, g.h);
     ctx.fillStyle = '#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6, g.y+8); ctx.lineTo(g.x+6+36, g.y+18); ctx.lineTo(g.x+6, g.y+28); ctx.closePath(); ctx.fill();
 
-    drawPlayerSprite(player.x, player.y, player.facing, player.state, player.animTime);
+    drawPlayerSprite(player.x, player.y, player.facing, player.state);
     ctx.restore();
   }
-
   function drawSpikeStrip(x,y,w,h){
     const n = Math.max(1, Math.floor(w/12));
     for(let i=0;i<n;i++){
       const sx = x + i*(w/n); ctx.fillStyle = '#e04a4a'; ctx.beginPath(); ctx.moveTo(sx, y+h); ctx.lineTo(sx + (w/n)/2, y); ctx.lineTo(sx + (w/n), y+h); ctx.closePath(); ctx.fill();
     }
   }
-
   function drawPlayerSprite(px, py, facing, state){
     let img = SPRITES.idle;
     if (state==='run' || state==='air') img = SPRITES.run;
@@ -211,11 +210,11 @@
   }
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
 
+  // Start button click
   document.getElementById('startButton').addEventListener('click', ()=>{
     document.getElementById('startScreen').classList.add('hidden');
-    setTimeout(boot, 800); // wait for fade out
+    setTimeout(boot, 800);
   });
-
   </script>
 </body>
 </html>
