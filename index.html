@@ -7,7 +7,7 @@
   <title>Jawsome Matt-venture</title>
   <style>
     html, body { height:100%; margin:0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
-    #game { display:block; width:100vw; height:100vh; }
+    #game { display:block; width:100vw; height:100vh; outline:none; }
 
     /* --- Touch controls (always visible on mobile/Cordova) --- */
     #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
@@ -49,7 +49,7 @@
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <canvas id="game" tabindex="0"></canvas>
 
   <!-- HUD -->
   <div id="hud" aria-hidden="true">Level 1 / 10</div>
@@ -70,6 +70,10 @@
   function resize(){ cvs.width = innerWidth; cvs.height = innerHeight; }
   addEventListener('resize', resize, { passive:true }); resize();
 
+  // Focus canvas so desktop keys always work
+  function focusCanvas(){ try{ cvs.focus(); }catch{} }
+  focusCanvas();
+
   // ===== Assets =====
   const SPRITES = { idle:null, run:null, duck:null, climb:null };
   const loadImage = (url)=> new Promise((res,rej)=>{ const i=new Image(); i.src=url; i.onload=()=>res(i); i.onerror=rej; });
@@ -84,22 +88,26 @@
 
   // ===== Input =====
   const keys = { left:false, right:false, upIntent:false, downIntent:false, jump:false, restart:false };
-  addEventListener('keydown', e=>{
-    if (['ArrowLeft','KeyA'].includes(e.code))  keys.left=true;
-    if (['ArrowRight','KeyD'].includes(e.code)) keys.right=true;
-    if (['ArrowUp','KeyW'].includes(e.code))    keys.upIntent=true;
-    if (['ArrowDown','KeyS'].includes(e.code))  keys.downIntent=true;
-    if (['Space'].includes(e.code))             keys.jump=true;
-    if (['KeyR'].includes(e.code))              keys.restart=true;
-  }, { passive:true });
-  addEventListener('keyup', e=>{
-    if (['ArrowLeft','KeyA'].includes(e.code))  keys.left=false;
-    if (['ArrowRight','KeyD'].includes(e.code)) keys.right=false;
-    if (['ArrowUp','KeyW'].includes(e.code))    keys.upIntent=false;
-    if (['ArrowDown','KeyS'].includes(e.code))  keys.downIntent=false;
-    if (['Space'].includes(e.code))             keys.jump=false;
-    if (['KeyR'].includes(e.code))              keys.restart=false;
-  }, { passive:true });
+  const keydown = (e)=>{
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','KeyA','KeyD','KeyW','KeyS','KeyR'].includes(e.code)) e.preventDefault();
+    if (e.code==='ArrowLeft' || e.code==='KeyA') keys.left = true;
+    if (e.code==='ArrowRight'|| e.code==='KeyD') keys.right = true;
+    if (e.code==='ArrowUp'   || e.code==='KeyW') keys.upIntent = true;
+    if (e.code==='ArrowDown' || e.code==='KeyS') keys.downIntent = true;
+    if (e.code==='Space') keys.jump = true;
+    if (e.code==='KeyR') keys.restart = true;
+  };
+  const keyup = (e)=>{
+    if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','KeyA','KeyD','KeyW','KeyS','KeyR'].includes(e.code)) e.preventDefault();
+    if (e.code==='ArrowLeft' || e.code==='KeyA') keys.left = false;
+    if (e.code==='ArrowRight'|| e.code==='KeyD') keys.right = false;
+    if (e.code==='ArrowUp'   || e.code==='KeyW') keys.upIntent = false;
+    if (e.code==='ArrowDown' || e.code==='KeyS') keys.downIntent = false;
+    if (e.code==='Space') keys.jump = false;
+    if (e.code==='KeyR') keys.restart = false;
+  };
+  window.addEventListener('keydown', keydown, { passive:false });
+  window.addEventListener('keyup',   keyup,   { passive:false });
 
   // Touch joystick (2D for duck & climb) + jump
   const joy = document.getElementById('joystick');
@@ -138,8 +146,9 @@
   // ===== Game physics =====
   const G=2000, MAX_DX=360, JUMP_VY=700, accel=1800, CLIMB_SPEED=220;
   const player = { x:80, y:0, w:48, h:72, dx:0, dy:0, onGround:false, facing:1, animTime:0, state:'idle', onLadder:false };
+  const SPRITE_H = 96; // target on-screen sprite height (keeps sizes consistent)
 
-  // ===== Levels (10) =====
+  // ===== Levels (10, last shows credits) =====
   const levels = [
     { platforms:[ {x:-200,y:420,w:700,h:40}, {x:650,y:360,w:170,h:22}, {x:880,y:420,w:500,h:40} ],
       ladders:[ {x:820,y:240,w:40,h:180} ],
@@ -203,6 +212,7 @@
     cam.x=0; cam.y=0;
     keys.left=keys.right=keys.upIntent=keys.downIntent=keys.jump=false;
     hudEl.textContent = `Level ${levelIndex+1} / ${levels.length}`;
+    focusCanvas();
   }
 
   function moveAndCollide(dt, solids){
@@ -236,9 +246,8 @@
   function update(dt){
     if (showCredits){
       if (keys.restart){ loadLevel(0); keys.restart=false; }
-      return; // freeze gameplay while credits up
+      return;
     }
-
     // horizontal input
     if (keys.left)  { player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing = -1; }
     if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
@@ -316,23 +325,14 @@
   }
 
   function drawCredits(){
-    // dim background
-    ctx.fillStyle = 'rgba(0,0,0,.35)';
-    ctx.fillRect(0,0,cvs.width,cvs.height);
-    // card
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0,0,cvs.width,cvs.height);
     const cardW = Math.min(520, cvs.width - 60), cardH = 220;
     const x = (cvs.width - cardW)/2, y = (cvs.height - cardH)/2;
-    ctx.fillStyle = '#ffffffee';
-    rr(ctx, x, y, cardW, cardH, 16); ctx.fill();
-    ctx.fillStyle = '#111';
-    ctx.textAlign = 'center';
-    ctx.imageSmoothingEnabled = true;
-    ctx.font = 'bold 36px system-ui, sans-serif';
-    ctx.fillText('Credits', cvs.width/2, y + 64);
-    ctx.font = '20px system-ui, sans-serif';
-    ctx.fillText('a special thanks to Nate and Matt', cvs.width/2, y + 108);
-    ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText('Press R or Tap to Restart', cvs.width/2, y + 160);
+    ctx.fillStyle = '#ffffffee'; rr(ctx, x, y, cardW, cardH, 16); ctx.fill();
+    ctx.fillStyle = '#111'; ctx.textAlign = 'center';
+    ctx.font = 'bold 36px system-ui, sans-serif'; ctx.fillText('Credits', cvs.width/2, y + 64);
+    ctx.font = '20px system-ui, sans-serif'; ctx.fillText('a special thanks to Nate and Matt', cvs.width/2, y + 108);
+    ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y + 160);
   }
 
   function draw(){
@@ -351,13 +351,20 @@
     for (const s of L.hazards) drawSpikeStrip(s.x, s.y, s.w, s.h);
     const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+6+36,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
 
-    // player sprite
+    // sprite (scaled to consistent height)
     let img=SPRITES.idle;
     if (player.state==='run' || player.state==='air') img=SPRITES.run;
     else if (player.state==='duck') img=SPRITES.duck;
     else if (player.state==='climb') img=SPRITES.climb;
     const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height;
-    ctx.save(); ctx.translate(player.x, player.y); ctx.scale(player.facing,1); ctx.translate(-fw/2,-fh); ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0); ctx.restore();
+    const s = SPRITE_H / fh;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.scale(player.facing * s, s);
+    ctx.translate(-fw/2, -fh);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(img,0,0);
+    ctx.restore();
 
     ctx.restore();
 
@@ -374,6 +381,7 @@
     await ensureSprites();
     loadLevel(0);
     requestAnimationFrame(loop);
+    focusCanvas();
   }, { passive:true });
 
   // Tap anywhere to restart while on credits
