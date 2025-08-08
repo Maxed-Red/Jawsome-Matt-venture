@@ -9,8 +9,46 @@
     #game { display:block; width:100vw; height:100vh; }
 
     /* Touch controls */
-    #touch { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: 64px 64px; grid-gap: 10px; z-index: 5; }
-    #touch button{ width:64px; height:64px; border-radius:999px; border:none; box-shadow:0 2px 6px rgba(0,0,0,.2); background:#ffffffcc; font-size:18px }
+    #touch {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+    }
+    #joystick {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      width: 100px;
+      height: 100px;
+      background: rgba(255,255,255,0.5);
+      border-radius: 50%;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #stick {
+      width: 50px;
+      height: 50px;
+      background: rgba(255,255,255,0.8);
+      border-radius: 50%;
+      position: absolute;
+      left: 25px;
+      top: 25px;
+      transition: transform 0.05s linear;
+    }
+    #btnJump {
+      position: absolute;
+      bottom: 30px;
+      right: 30px;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,.2);
+      background: #ffffffcc;
+      font-size: 24px;
+      pointer-events: auto;
+    }
     @media (hover: hover) { #touch { display: none; } }
 
     /* Start Screen */
@@ -34,9 +72,8 @@
 
   <!-- Touch controls -->
   <div id="touch" aria-hidden="true">
-    <button id="btnLeft">⟵</button>
-    <button id="btnRight">⟶</button>
-    <button id="btnJump" style="grid-column: span 2">⤒</button>
+    <div id="joystick"><div id="stick"></div></div>
+    <button id="btnJump">⤒</button>
   </div>
 
   <!-- Start Screen -->
@@ -88,19 +125,47 @@
     if (e.code==='KeyL') keys.next=false;
   });
 
-  const touch = {
-    left: document.getElementById('btnLeft'),
-    right: document.getElementById('btnRight'),
-    jump: document.getElementById('btnJump'),
-  };
-  for (const [k,btn] of Object.entries(touch)){
-    const down = ()=>{ if (k==='left') keys.left=true; if(k==='right') keys.right=true; if(k==='jump'){ keys.up=true; keys.jump=true; }};
-    const up = ()=>{ if (k==='left') keys.left=false; if(k==='right') keys.right=false; if(k==='jump'){ keys.up=false; }};
-    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); btn.setPointerCapture(e.pointerId); down(); });
-    btn.addEventListener('pointerup',   (e)=>{ e.preventDefault(); up(); });
-    btn.addEventListener('pointercancel', up);
-    btn.addEventListener('pointerleave', up);
-  }
+  // ================= Touch Joystick & Jump =================
+  const joystick = document.getElementById('joystick');
+  const stick = document.getElementById('stick');
+  let joyCenter = { x: 0, y: 0 };
+  let joyActive = false;
+
+  joystick.addEventListener('pointerdown', e => {
+    joyActive = true;
+    joyCenter = { x: e.clientX, y: e.clientY };
+  });
+  joystick.addEventListener('pointermove', e => {
+    if (!joyActive) return;
+    const dx = e.clientX - joyCenter.x;
+    const distance = Math.min(40, Math.abs(dx));
+    stick.style.transform = `translateX(${dx > 0 ? distance : -distance}px)`;
+
+    keys.left = dx < -10;
+    keys.right = dx > 10;
+  });
+  joystick.addEventListener('pointerup', () => {
+    joyActive = false;
+    stick.style.transform = 'translateX(0px)';
+    keys.left = false;
+    keys.right = false;
+  });
+  joystick.addEventListener('pointercancel', () => {
+    joyActive = false;
+    stick.style.transform = 'translateX(0px)';
+    keys.left = false;
+    keys.right = false;
+  });
+
+  document.getElementById('btnJump').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    keys.up = true;
+    keys.jump = true;
+  });
+  document.getElementById('btnJump').addEventListener('pointerup', e => {
+    e.preventDefault();
+    keys.up = false;
+  });
 
   // ================= Physics & Player =================
   const G = 2000, MAX_DX = 360, JUMP_VY = 700, accel = 1800;
@@ -120,10 +185,9 @@
     levelIndex = (i+levels.length)%levels.length;
     const L = levels[levelIndex];
     player.x = L.platforms[0].x + 80;
-    player.y = L.platforms[0].y - 5; // start above ground
+    player.y = L.platforms[0].y - 5;
     player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
     cam.x = 0; cam.y = 0;
-    // reset keys to avoid stuck movement
     keys.left = keys.right = keys.up = keys.jump = keys.down = false;
   }
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
@@ -213,7 +277,6 @@
   }
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
 
-  // Clicking the image starts the game
   document.getElementById('startImage').addEventListener('click', ()=>{
     document.getElementById('startScreen').classList.add('hidden');
     setTimeout(boot, 800);
