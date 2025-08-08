@@ -2,68 +2,41 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jawsome Matt Venture</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Jawsome Matt‑venture</title>
   <style>
-    html, body { height: 100%; margin: 0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
+    html, body { height:100%; margin:0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
     #game { display:block; width:100vw; height:100vh; }
 
-    /* Touch controls */
-    #touch {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      z-index: 5;
-    }
+    /* --- Touch controls (always visible on mobile/Cordova) --- */
+    #touch { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
     #joystick {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      width: 100px;
-      height: 100px;
-      background: rgba(255,255,255,0.5);
-      border-radius: 50%;
-      pointer-events: auto;
-      touch-action: none;
+      position: absolute; bottom: 24px; left: 24px;
+      width: 120px; height: 120px; border-radius: 50%;
+      background: rgba(255,255,255,.4); backdrop-filter: blur(3px);
+      pointer-events: auto; touch-action: none;
     }
     #stick {
-      width: 50px;
-      height: 50px;
-      background: rgba(255,255,255,0.8);
-      border-radius: 50%;
-      position: absolute;
-      left: 25px;
-      top: 25px;
-      transition: transform 0.05s linear;
+      position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+      background: rgba(255,255,255,.85); box-shadow: 0 2px 6px rgba(0,0,0,.25);
+      transition: transform .05s linear;
     }
     #btnJump {
-      position: absolute;
-      bottom: 30px;
-      right: 30px;
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      border: none;
-      box-shadow: 0 2px 6px rgba(0,0,0,.2);
-      background: #ffffffcc;
-      font-size: 24px;
-      pointer-events: auto;
+      position: absolute; bottom: 36px; right: 28px;
+      width: 92px; height: 92px; border-radius: 50%; border: 0;
+      background: #ffffffcc; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+      font-size: 28px; pointer-events: auto; touch-action: manipulation;
     }
-    @media (hover: hover) { #touch { display: none; } }
+    /* Hide touch UI only on mouse/keyboard desktop */
+    @media (hover: hover) and (pointer: fine) { #touch { display:none; } }
 
-    /* Start Screen */
+    /* --- Start screen --- */
     #startScreen {
-      position: fixed; inset: 0;
-      background: #92d4ff;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      transition: opacity 0.8s ease;
-      z-index: 10;
+      position: fixed; inset: 0; z-index: 10;
+      display:flex; align-items:center; justify-content:center; background:#92d4ff;
+      transition: opacity .8s ease;
     }
-    #startScreen img {
-      max-width: 90%;
-      max-height: 80vh;
-      cursor: pointer;
-    }
+    #startScreen img { max-width: 90%; max-height: 80vh; cursor: pointer; }
     #startScreen.hidden { opacity: 0; pointer-events: none; }
   </style>
 </head>
@@ -71,104 +44,74 @@
   <canvas id="game"></canvas>
 
   <!-- Touch controls -->
-  <div id="touch" aria-hidden="true">
+  <div id="touch">
     <div id="joystick"><div id="stick"></div></div>
-    <button id="btnJump">⤒</button>
+    <button id="btnJump" aria-label="Jump">⤒</button>
   </div>
 
-  <!-- Start Screen -->
-  <div id="startScreen">
-    <img id="startImage" src="assets/matt-loading.png" alt="Loading...">
-  </div>
+  <!-- Start screen (tap image to start) -->
+  <div id="startScreen"><img id="startImage" src="assets/matt-loading.png" alt="Start" /></div>
 
   <script>
-  // ================= Canvas =================
+  // ===== Canvas =====
   const cvs = document.getElementById('game');
-  const ctx = cvs.getContext('2d');
+  const ctx = cvs.getContext('2d', { alpha:false });
   function resize(){ cvs.width = innerWidth; cvs.height = innerHeight; }
-  addEventListener('resize', resize); resize();
+  addEventListener('resize', resize, { passive:true }); resize();
 
-  // ================= Assets =================
+  // ===== Assets =====
   const SPRITES = { idle:null, run:null, duck:null };
-  async function loadImage(url){
-    const img = new Image(); img.decoding = 'async'; img.src = url; await img.decode(); return img;
-  }
+  const loadImage = (url)=> new Promise((res,rej)=>{ const i=new Image(); i.src=url; i.onload=()=>res(i); i.onerror=rej; });
   async function ensureSprites(){
-    SPRITES.idle = await loadImage('assets/shark-idle.png').catch(()=>null);
-    SPRITES.run  = await loadImage('assets/shark-running.png').catch(()=>null);
-    SPRITES.duck = await loadImage('assets/shark-ducking.png').catch(()=>null);
-    for (const k of ['idle','run','duck']) if (!SPRITES[k]) SPRITES[k] = genFallback(k);
-  }
-  function genFallback(kind){
-    const c=document.createElement('canvas'); c.width=64; c.height=96; const g=c.getContext('2d');
-    g.fillStyle = kind==='idle'?'#556': kind==='run'?'#5a86ff':'#ff6a6a';
-    g.fillRect(0,0,c.width,c.height); g.fillStyle='white'; g.font='12px system-ui'; g.fillText(kind,6,16);
-    return c;
+    const safe = async (p,f)=>{ try{ return await p; }catch{ return f; } };
+    const fb = (label)=>{ const c=document.createElement('canvas'); c.width=64; c.height=96; const g=c.getContext('2d'); g.fillStyle='#5a86ff'; g.fillRect(0,0,64,96); g.fillStyle='#fff'; g.font='12px system-ui'; g.fillText(label,6,16); return c; };
+    SPRITES.idle = await safe(loadImage('assets/shark-idle.png'), fb('idle'));
+    SPRITES.run  = await safe(loadImage('assets/shark-running.png'), fb('run'));
+    SPRITES.duck = await safe(loadImage('assets/shark-ducking.png'), fb('duck'));
   }
 
-  // ================= Controls =================
+  // ===== Input =====
   const keys = { left:false, right:false, up:false, jump:false, down:false, restart:false, next:false };
   addEventListener('keydown', e=>{
     if (['ArrowLeft','KeyA'].includes(e.code))  keys.left=true;
     if (['ArrowRight','KeyD'].includes(e.code)) keys.right=true;
     if (['ArrowUp','Space','KeyW'].includes(e.code)) keys.up=true, keys.jump=true;
     if (['ArrowDown','KeyS'].includes(e.code)) keys.down=true;
-    if (e.code==='KeyR') keys.restart=true;
-    if (e.code==='KeyL') keys.next=true;
-  });
+  }, { passive:true });
   addEventListener('keyup', e=>{
     if (['ArrowLeft','KeyA'].includes(e.code))  keys.left=false;
     if (['ArrowRight','KeyD'].includes(e.code)) keys.right=false;
     if (['ArrowUp','Space','KeyW'].includes(e.code)) keys.up=false;
     if (['ArrowDown','KeyS'].includes(e.code)) keys.down=false;
-    if (e.code==='KeyR') keys.restart=false;
-    if (e.code==='KeyL') keys.next=false;
-  });
+  }, { passive:true });
 
-  // ================= Touch Joystick & Jump =================
-  const joystick = document.getElementById('joystick');
+  // Touch joystick + jump (works in Cordova WebView)
+  const joy = document.getElementById('joystick');
   const stick = document.getElementById('stick');
-  let joyCenter = { x: 0, y: 0 };
-  let joyActive = false;
+  let joyActive=false, joyStartX=0;
+  const JOY_MAX = 40, DEAD = 10;
 
-  joystick.addEventListener('pointerdown', e => {
-    joyActive = true;
-    joyCenter = { x: e.clientX, y: e.clientY };
+  joy.addEventListener('pointerdown', e=>{
+    joyActive=true; joy.setPointerCapture(e.pointerId); joyStartX = e.clientX; 
   });
-  joystick.addEventListener('pointermove', e => {
-    if (!joyActive) return;
-    const dx = e.clientX - joyCenter.x;
-    const distance = Math.min(40, Math.abs(dx));
-    stick.style.transform = `translateX(${dx > 0 ? distance : -distance}px)`;
+  joy.addEventListener('pointermove', e=>{
+    if(!joyActive) return;
+    const dx = Math.max(-JOY_MAX, Math.min(JOY_MAX, e.clientX - joyStartX));
+    stick.style.transform = `translateX(${dx}px)`;
+    keys.left  = dx < -DEAD;
+    keys.right = dx >  DEAD;
+  });
+  const joyUp = ()=>{ joyActive=false; stick.style.transform='translateX(0)'; keys.left=false; keys.right=false; };
+  joy.addEventListener('pointerup', joyUp);
+  joy.addEventListener('pointercancel', joyUp);
+  joy.addEventListener('pointerleave', joyUp);
 
-    keys.left = dx < -10;
-    keys.right = dx > 10;
-  });
-  joystick.addEventListener('pointerup', () => {
-    joyActive = false;
-    stick.style.transform = 'translateX(0px)';
-    keys.left = false;
-    keys.right = false;
-  });
-  joystick.addEventListener('pointercancel', () => {
-    joyActive = false;
-    stick.style.transform = 'translateX(0px)';
-    keys.left = false;
-    keys.right = false;
-  });
+  const btnJump = document.getElementById('btnJump');
+  btnJump.addEventListener('pointerdown', e=>{ e.preventDefault(); keys.up=true; keys.jump=true; });
+  btnJump.addEventListener('pointerup',   e=>{ e.preventDefault(); keys.up=false; });
 
-  document.getElementById('btnJump').addEventListener('pointerdown', e => {
-    e.preventDefault();
-    keys.up = true;
-    keys.jump = true;
-  });
-  document.getElementById('btnJump').addEventListener('pointerup', e => {
-    e.preventDefault();
-    keys.up = false;
-  });
-
-  // ================= Physics & Player =================
-  const G = 2000, MAX_DX = 360, JUMP_VY = 700, accel = 1800;
+  // ===== Game physics =====
+  const G=2000, MAX_DX=360, JUMP_VY=700, accel=1800;
   const player = { x:80, y:0, w:48, h:72, dx:0, dy:0, onGround:false, facing:1, animTime:0, state:'idle' };
 
   const levels = [
@@ -178,52 +121,21 @@
     { platforms:[ {x:-200,y:420,w:2200,h:40} ], goal:{x:1980,y:280,w:30,h:140}, hazards:[ {x:300,y:402,w:80,h:18},{x:520,y:402,w:80,h:18},{x:740,y:402,w:80,h:18},{x:960,y:402,w:80,h:18},{x:1180,y:402,w:80,h:18},{x:1400,y:402,w:80,h:18},{x:1620,y:402,w:80,h:18} ] },
     { platforms:[ {x:-200,y:420,w:500,h:40}, {x:380,y:360,w:160,h:20}, {x:660,y:300,w:160,h:20}, {x:940,y:240,w:160,h:20}, {x:1220,y:300,w:160,h:20}, {x:1500,y:360,w:160,h:20}, {x:1780,y:420,w:600,h:40} ], goal:{x:2100,y:320,w:30,h:140}, hazards:[ {x:820,y:402,w:80,h:18}, {x:1260,y:402,w:80,h:18} ] }
   ];
-  let levelIndex = 0;
-  const cam = { x:0, y:0 };
+  let levelIndex=0; const cam={x:0,y:0};
 
+  function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
   function loadLevel(i){
     levelIndex = (i+levels.length)%levels.length;
     const L = levels[levelIndex];
-    player.x = L.platforms[0].x + 80;
-    player.y = L.platforms[0].y - 5;
+    player.x = L.platforms[0].x + 80; player.y = L.platforms[0].y - 5;
     player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
-    cam.x = 0; cam.y = 0;
-    keys.left = keys.right = keys.up = keys.jump = keys.down = false;
+    cam.x=0; cam.y=0;
+    keys.left=keys.right=keys.up=keys.jump=keys.down=false; // clear any stuck touches
   }
-  function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
-  function update(dt){
-    if (keys.restart){ loadLevel(levelIndex); keys.restart=false; }
-    if (keys.next){ loadLevel(levelIndex+1); keys.next=false; }
-
-    if (keys.left)  { player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing = -1; }
-    if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
-    if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
-
-    player.dy += G*dt;
-    if (player.onGround && keys.jump){ player.dy = -JUMP_VY; player.onGround=false; }
-    keys.jump = false;
-
-    const crouching = keys.down && player.onGround;
-    moveAndCollide(dt, levels[levelIndex].platforms);
-
-    const pbox = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
-    if (levels[levelIndex].hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
-    if (aabb(pbox, levels[levelIndex].goal)) loadLevel(levelIndex+1);
-
-    if (player.y > cvs.height + 600) loadLevel(levelIndex);
-
-    const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
-
-    if (crouching) player.state = 'duck';
-    else if (!player.onGround) player.state = 'air';
-    else if (Math.abs(player.dx) > 40) player.state = 'run';
-    else player.state = 'idle';
-    player.animTime += dt;
-  }
   function moveAndCollide(dt, solids){
     player.x += player.dx * dt; collideAxis('x', solids);
-    player.y += player.dy * dt; player.onGround = false; collideAxis('y', solids);
+    player.y += player.dy * dt; player.onGround=false; collideAxis('y', solids);
   }
   function collideAxis(axis, solids){
     const box = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
@@ -239,48 +151,60 @@
     }
   }
 
+  function update(dt){
+    if (keys.left)  { player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing = -1; }
+    if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
+    if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
+
+    player.dy += G*dt;
+    if (player.onGround && keys.jump){ player.dy = -JUMP_VY; player.onGround=false; }
+    keys.jump=false;
+
+    const L = levels[levelIndex];
+    moveAndCollide(dt, L.platforms);
+
+    const pbox = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
+    if (L.hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
+    if (aabb(pbox, L.goal)) loadLevel(levelIndex+1);
+    if (player.y > cvs.height + 600) loadLevel(levelIndex);
+
+    const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
+    player.state = !player.onGround ? 'air' : (Math.abs(player.dx)>40 ? 'run' : 'idle');
+    player.animTime += dt;
+  }
+
   function draw(){
     ctx.clearRect(0,0,cvs.width,cvs.height);
-    const grd = ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle = grd; ctx.fillRect(0,0,cvs.width,cvs.height);
+    const grd = ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle=grd; ctx.fillRect(0,0,cvs.width,cvs.height);
 
-    ctx.save(); ctx.translate(-cam.x, 0);
+    ctx.save(); ctx.translate(-cam.x,0);
     const L = levels[levelIndex];
-    for (const p of L.platforms){ ctx.fillStyle = '#75c46a'; ctx.fillRect(p.x, p.y, p.w, p.h); ctx.fillStyle='#4a8f42'; ctx.fillRect(p.x, p.y+ p.h-6, p.w, 6); }
-    for (const s of L.hazards){ drawSpikeStrip(s.x, s.y, s.w, s.h); }
+    for (const p of L.platforms){ ctx.fillStyle='#75c46a'; ctx.fillRect(p.x,p.y,p.w,p.h); ctx.fillStyle='#4a8f42'; ctx.fillRect(p.x,p.y+p.h-6,p.w,6); }
+    for (const s of L.hazards){ const n=Math.max(1,Math.floor(s.w/12)); for(let i=0;i<n;i++){ const sx=s.x+i*(s.w/n); ctx.fillStyle='#e04a4a'; ctx.beginPath(); ctx.moveTo(sx,s.y+s.h); ctx.lineTo(sx+(s.w/n)/2,s.y); ctx.lineTo(sx+(s.w/n),s.y+s.h); ctx.closePath(); ctx.fill(); } }
+    const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+6+36,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
 
-    const g = L.goal; ctx.fillStyle = '#ffcc00'; ctx.fillRect(g.x, g.y, 6, g.h);
-    ctx.fillStyle = '#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6, g.y+8); ctx.lineTo(g.x+6+36, g.y+18); ctx.lineTo(g.x+6, g.y+28); ctx.closePath(); ctx.fill();
+    // sprite
+    let img=SPRITES.idle; if (player.state==='run'||player.state==='air') img=SPRITES.run;
+    const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height;
+    ctx.save(); ctx.translate(player.x, player.y); ctx.scale(player.facing,1); ctx.translate(-fw/2,-fh); ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0); ctx.restore();
 
-    drawPlayerSprite(player.x, player.y, player.facing, player.state);
     ctx.restore();
   }
-  function drawSpikeStrip(x,y,w,h){
-    const n = Math.max(1, Math.floor(w/12));
-    for(let i=0;i<n;i++){
-      const sx = x + i*(w/n); ctx.fillStyle = '#e04a4a'; ctx.beginPath(); ctx.moveTo(sx, y+h); ctx.lineTo(sx + (w/n)/2, y); ctx.lineTo(sx + (w/n), y+h); ctx.closePath(); ctx.fill();
-    }
-  }
-  function drawPlayerSprite(px, py, facing, state){
-    let img = SPRITES.idle;
-    if (state==='run' || state==='air') img = SPRITES.run;
-    else if (state==='duck') img = SPRITES.duck;
-    const fw = img.naturalWidth || img.width;
-    const fh = img.naturalHeight || img.height;
-    ctx.save(); ctx.translate(px, py); ctx.scale(facing, 1); ctx.translate(-fw/2, -fh); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, 0, 0); ctx.restore();
-  }
 
+  // ===== Loop =====
   let lastTs;
-  async function boot(){
+  function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
+
+  // Start game on image tap
+  document.getElementById('startImage').addEventListener('click', async ()=>{
+    document.getElementById('startScreen').classList.add('hidden');
     await ensureSprites();
     loadLevel(0);
     requestAnimationFrame(loop);
-  }
-  function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
+  }, { passive:true });
 
-  document.getElementById('startImage').addEventListener('click', ()=>{
-    document.getElementById('startScreen').classList.add('hidden');
-    setTimeout(boot, 800);
-  });
+  // Prevent pull-to-refresh / bounce on mobile
+  ['touchmove','gesturestart'].forEach(t=>addEventListener(t, e=>{ e.preventDefault(); }, { passive:false }));
   </script>
 </body>
 </html>
