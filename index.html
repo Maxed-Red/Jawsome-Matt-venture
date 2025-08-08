@@ -40,6 +40,28 @@
     #startScreen img { max-width: 90%; max-height: 80vh; cursor: pointer; }
     #startScreen.hidden { opacity: 0; pointer-events: none; }
 
+    /* --- Character select --- */
+    #selectScreen {
+      position: fixed; inset: 0; z-index: 11; display:none;
+      align-items:center; justify-content:center; background: rgba(0,0,0,.35);
+    }
+    #selectScreen.show { display:flex; }
+    .selectPanel {
+      background:#ffffffee; border-radius:16px; padding:18px 20px; width:min(620px, 90vw);
+      box-shadow: 0 8px 28px rgba(0,0,0,.25); text-align:center;
+    }
+    .selectPanel h2 { margin:0 0 10px; font: 600 22px/1.2 system-ui, sans-serif; }
+    .choices { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .charBtn {
+      display:flex; flex-direction:column; align-items:center; gap:8px;
+      border:0; border-radius:14px; padding:14px; background:#f6f7fb;
+      cursor:pointer; transition: transform .08s ease, box-shadow .08s ease;
+    }
+    .charBtn:active { transform: translateY(1px); }
+    .portrait { width:110px; height:110px; image-rendering: pixelated; }
+    .charLabel { font:600 14px/1.2 system-ui, sans-serif; }
+    .hint { margin-top:10px; font: 12px/1.2 system-ui, sans-serif; color:#444 }
+
     /* --- HUD --- */
     #hud {
       position: fixed; top: 10px; right: 12px; z-index: 6;
@@ -63,6 +85,24 @@
   <!-- Start screen (tap image to start) -->
   <div id="startScreen"><img id="startImage" src="assets/matt-loading.png" alt="Start" /></div>
 
+  <!-- Character select -->
+  <div id="selectScreen" role="dialog" aria-modal="true">
+    <div class="selectPanel">
+      <h2>Choose your character</h2>
+      <div class="choices">
+        <button class="charBtn" data-char="matt">
+          <canvas id="mattPortrait" class="portrait" width="110" height="110"></canvas>
+          <div class="charLabel">Matt the Shark</div>
+        </button>
+        <button class="charBtn" data-char="nate">
+          <canvas id="natePortrait" class="portrait" width="110" height="110"></canvas>
+          <div class="charLabel">Lil’ Nate</div>
+        </button>
+      </div>
+      <div class="hint">Tip: Arrow/WASD to move, Space to jump, Down to duck. Climb with the stick ↑/↓ — and you can now jump off ladders.</div>
+    </div>
+  </div>
+
   <script>
   // ===== Canvas =====
   const cvs = document.getElementById('game');
@@ -75,15 +115,39 @@
   focusCanvas();
 
   // ===== Assets =====
-  const SPRITES = { idle:null, run:null, duck:null, climb:null };
+  // Two selectable sets: 'matt' (shark-*.png) and 'nate' (nate-*.png or nate.png)
+  const SPRITES = { matt:{}, nate:{} };
+  const SPRITE_H = 96; // consistent on-screen sprite height
+
   const loadImage = (url)=> new Promise((res,rej)=>{ const i=new Image(); i.src=url; i.onload=()=>res(i); i.onerror=rej; });
-  async function ensureSprites(){
+
+  const fallback = (label)=>{
+    const c=document.createElement('canvas'); c.width=64; c.height=96;
+    const g=c.getContext('2d'); g.fillStyle='#5a86ff'; g.fillRect(0,0,64,96);
+    g.fillStyle='#fff'; g.font='12px system-ui'; g.fillText(label,6,16); return c;
+  };
+
+  async function loadSet(prefix, singleAlt, target){
     const safe = async (p,f)=>{ try{ return await p; }catch{ return f; } };
-    const fb = (label)=>{ const c=document.createElement('canvas'); c.width=64; c.height=96; const g=c.getContext('2d'); g.fillStyle='#5a86ff'; g.fillRect(0,0,64,96); g.fillStyle='#fff'; g.font='12px system-ui'; g.fillText(label,6,16); return c; };
-    SPRITES.idle = await safe(loadImage('assets/shark-idle.png'), fb('idle'));
-    SPRITES.run  = await safe(loadImage('assets/shark-running.png'), fb('run'));
-    SPRITES.duck = await safe(loadImage('assets/shark-ducking.png'), fb('duck'));
-    SPRITES.climb= await safe(loadImage('assets/shark-climb.png'), fb('climb'));
+    // Try per-state
+    target.idle = await safe(loadImage(`assets/${prefix}-idle.png`), null);
+    target.run  = await safe(loadImage(`assets/${prefix}-running.png`), null);
+    target.duck = await safe(loadImage(`assets/${prefix}-ducking.png`), null);
+    target.climb= await safe(loadImage(`assets/${prefix}-climb.png`), null);
+
+    // If any missing and we have a singleAlt (e.g., nate.png), reuse it
+    let single = null;
+    if (singleAlt){
+      single = await safe(loadImage(`assets/${singleAlt}`), null);
+    }
+    for (const k of ['idle','run','duck','climb']){
+      if (!target[k]) target[k] = single || fallback(`${prefix}-${k}`);
+    }
+  }
+
+  async function ensureSprites(){
+    await loadSet('shark', null, SPRITES.matt);
+    await loadSet('nate', 'nate.png', SPRITES.nate);
   }
 
   // ===== Input =====
@@ -146,7 +210,10 @@
   // ===== Game physics =====
   const G=2000, MAX_DX=360, JUMP_VY=700, accel=1800, CLIMB_SPEED=220;
   const player = { x:80, y:0, w:48, h:72, dx:0, dy:0, onGround:false, facing:1, animTime:0, state:'idle', onLadder:false };
-  const SPRITE_H = 96; // target on-screen sprite height (keeps sizes consistent)
+
+  // Active character sprites (set after selection)
+  let ACTIVE = SPRITES.matt;
+  let currentChar = 'matt';
 
   // ===== Levels (10, last shows credits) =====
   const levels = [
@@ -215,57 +282,48 @@
     focusCanvas();
   }
 
+  // ===== Physics (X first, then Y) with ladder movement =====
   function moveAndCollide(dt, solids){
-  // 1) Horizontal first
-  player.x += player.dx * dt;
-  collideAxis('x', solids);
+    // Horizontal first
+    player.x += player.dx * dt;
+    collideAxis('x', solids);
 
-  // 2) Vertical second (ladder overrides gravity motion)
-  if (player.onLadder){
-    let vy = 0;
-    if (keys.upIntent) vy -= CLIMB_SPEED;
-    if (keys.downIntent) vy += CLIMB_SPEED;
-    player.y += vy * dt;
-    player.dy = 0; // no gravity while climbing
-  } else {
-    player.y += player.dy * dt;
+    // Vertical second (ladder overrides gravity displacement)
+    if (player.onLadder){
+      let vy = 0;
+      if (keys.upIntent)   vy -= CLIMB_SPEED;
+      if (keys.downIntent) vy += CLIMB_SPEED;
+      player.y += vy * dt;
+      player.dy = 0;
+    } else {
+      player.y += player.dy * dt;
+    }
+
+    player.onGround = false;
+    collideAxis('y', solids);
   }
 
-  player.onGround = false;
-  collideAxis('y', solids);
-}
-
-function collideAxis(axis, solids){
-  // Tiny vertical inset during X checks to avoid floor grazing causing X snaps
-  const inset = (axis === 'x') ? 1 : 0;
-  const box = {
-    x: player.x - player.w/2,
-    y: player.y - player.h + inset,
-    w: player.w,
-    h: player.h - inset*2
-  };
-
-  for (const s of solids){
-    // AABB test
-    if (!(box.x < s.x + s.w && box.x + box.w > s.x &&
-          box.y < s.y + s.h && box.y + box.h > s.y)) continue;
-
-    if (axis === 'x'){
-      if (player.dx > 0){ // moving right -> snap to left side of solid
-        box.x = s.x - box.w; player.x = box.x + player.w/2; player.dx = 0;
-      } else if (player.dx < 0){ // moving left -> snap to right side
-        box.x = s.x + s.w; player.x = box.x + player.w/2; player.dx = 0;
-      }
-    } else { // axis === 'y'
-      if (player.dy > 0){ // falling -> land on top
-        box.y = s.y - box.h; player.y = box.y + player.h; player.dy = 0; player.onGround = true;
-      } else if (player.dy < 0){ // moving up -> hit head
-        box.y = s.y + s.h; player.y = box.y + player.h; player.dy = 0;
+  function collideAxis(axis, solids){
+    const inset = (axis === 'x') ? 1 : 0;
+    const box = {
+      x: player.x - player.w/2,
+      y: player.y - player.h + inset,
+      w: player.w,
+      h: player.h - inset*2
+    };
+    for (const s of solids){
+      const hit = (box.x < s.x + s.w) && (box.x + box.w > s.x) &&
+                  (box.y < s.y + s.h) && (box.y + box.h > s.y);
+      if (!hit) continue;
+      if (axis === 'x'){
+        if (player.dx > 0){ box.x = s.x - box.w; player.x = box.x + player.w/2; player.dx = 0; }
+        else if (player.dx < 0){ box.x = s.x + s.w; player.x = box.x + player.w/2; player.dx = 0; }
+      } else {
+        if (player.dy > 0){ box.y = s.y - box.h; player.y = box.y + player.h; player.dy = 0; player.onGround = true; }
+        else if (player.dy < 0){ box.y = s.y + s.h; player.y = box.y + player.h; player.dy = 0; }
       }
     }
   }
-}
-
 
   function update(dt){
     if (showCredits){
@@ -277,20 +335,34 @@ function collideAxis(axis, solids){
     if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
     if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
 
-    // gravity + jump
+    // gravity
     if (!player.onLadder) player.dy += G*dt;
-    if (player.onGround && keys.jump){ player.dy = -JUMP_VY; player.onGround=false; }
+
+    // JUMP: from ground OR (NEW) from ladder
+    if (keys.jump){
+      if (player.onGround){
+        player.dy = -JUMP_VY; player.onGround=false;
+      } else if (player.onLadder){
+        // ladder jump: release ladder and leap
+        player.onLadder = false;
+        player.dy = -JUMP_VY * 1.0; // tweak multiplier if you want stronger ladder jumps
+      }
+      // don't auto-clear keys.jump; user releases button
+    }
 
     // Ladder detection
     const L = levels[levelIndex];
     const pbox = { x: player.x- player.w/2 + 6, y: player.y- player.h, w: player.w-12, h: player.h };
     const touchingLadder = L.ladders?.some(ld => aabb(pbox, ld));
-    if (touchingLadder && (keys.upIntent || keys.downIntent)){
-      player.onLadder = true;
-      const ld = L.ladders.find(ld => aabb(pbox, ld));
-      if (ld){ player.x = Math.max(ld.x + player.w/2, Math.min(ld.x + ld.w - player.w/2, player.x)); }
-    } else if (!touchingLadder) {
-      player.onLadder = false;
+    if (!player.onLadder){
+      if (touchingLadder && (keys.upIntent || keys.downIntent)){
+        player.onLadder = true;
+        const ld = L.ladders.find(ld => aabb(pbox, ld));
+        if (ld){ player.x = Math.max(ld.x + player.w/2, Math.min(ld.x + ld.w - player.w/2, player.x)); }
+      }
+    } else {
+      // If we step out of ladder bounds, drop off it
+      if (!touchingLadder) player.onLadder = false;
     }
 
     moveAndCollide(dt, L.platforms);
@@ -375,11 +447,11 @@ function collideAxis(axis, solids){
     for (const s of L.hazards) drawSpikeStrip(s.x, s.y, s.w, s.h);
     const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+6+36,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
 
-    // sprite (scaled to consistent height)
-    let img=SPRITES.idle;
-    if (player.state==='run' || player.state==='air') img=SPRITES.run;
-    else if (player.state==='duck') img=SPRITES.duck;
-    else if (player.state==='climb') img=SPRITES.climb;
+    // sprite (scaled to consistent height) — uses ACTIVE set from selected character
+    let img=ACTIVE.idle;
+    if (player.state==='run' || player.state==='air') img=ACTIVE.run;
+    else if (player.state==='duck') img=ACTIVE.duck;
+    else if (player.state==='climb') img=ACTIVE.climb;
     const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height;
     const s = SPRITE_H / fh;
     ctx.save();
@@ -399,13 +471,42 @@ function collideAxis(axis, solids){
   let lastTs;
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
 
-  // Start game on image tap
+  // ===== Character select wiring =====
+  const selectScreen = document.getElementById('selectScreen');
+  const mattPortrait = document.getElementById('mattPortrait');
+  const natePortrait = document.getElementById('natePortrait');
+
+  function drawPortrait(canvas, img){
+    const g = canvas.getContext('2d');
+    g.clearRect(0,0,canvas.width,canvas.height);
+    const fw = img.naturalWidth||img.width, fh = img.naturalHeight||img.height;
+    const s = Math.min(canvas.height / fh, canvas.width / fw) * 0.9;
+    g.imageSmoothingEnabled = false;
+    g.save(); g.translate(canvas.width/2, canvas.height*0.95); g.scale(s,s); g.translate(-fw/2, -fh); g.drawImage(img,0,0); g.restore();
+  }
+
+  function showSelect(){
+    drawPortrait(mattPortrait, SPRITES.matt.idle);
+    drawPortrait(natePortrait, SPRITES.nate.idle);
+    selectScreen.classList.add('show');
+  }
+
+  for (const btn of document.querySelectorAll('.charBtn')){
+    btn.addEventListener('click', ()=>{
+      currentChar = btn.dataset.char;
+      ACTIVE = SPRITES[currentChar];
+      selectScreen.classList.remove('show');
+      loadLevel(0);
+      requestAnimationFrame(loop);
+    });
+  }
+
+  // Start flow: Start image -> load sprites -> show select -> pick char -> start loop
   document.getElementById('startImage').addEventListener('click', async ()=>{
     document.getElementById('startScreen').classList.add('hidden');
     await ensureSprites();
-    loadLevel(0);
-    requestAnimationFrame(loop);
-    focusCanvas();
+    ACTIVE = SPRITES.matt; // default until player chooses
+    showSelect();
   }, { passive:true });
 
   // Tap anywhere to restart while on credits
