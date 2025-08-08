@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sharkboy 2D Side-Scroller</title>
+  <title>Jawsome Matt Venture</title>
   <style>
     html, body { height: 100%; margin: 0; background:#92d4ff; font-family: system-ui, sans-serif; overflow:hidden; }
     #game { display:block; width:100vw; height:100vh; }
@@ -11,6 +11,7 @@
     /* Touch controls */
     #touch { position: absolute; right: 10px; bottom: 10px; display: grid; grid-template-columns: 64px 64px; grid-gap: 10px; z-index: 5; }
     #touch button{ width:64px; height:64px; border-radius:999px; border:none; box-shadow:0 2px 6px rgba(0,0,0,.2); background:#ffffffcc; font-size:18px }
+    @media (hover: hover) { #touch { display: none; } }
 
     /* Start Screen */
     #startScreen {
@@ -54,14 +55,13 @@
 
   // ================= Assets =================
   const SPRITES = { idle:null, run:null, duck:null };
-
   async function loadImage(url){
     const img = new Image(); img.decoding = 'async'; img.src = url; await img.decode(); return img;
   }
   async function ensureSprites(){
-    try { SPRITES.idle = await loadImage('assets/shark-idle.png'); } catch {}
-    try { SPRITES.run  = await loadImage('assets/shark-running.png'); } catch {}
-    try { SPRITES.duck = await loadImage('assets/shark-ducking.png'); } catch {}
+    SPRITES.idle = await loadImage('assets/shark-idle.png').catch(()=>null);
+    SPRITES.run  = await loadImage('assets/shark-running.png').catch(()=>null);
+    SPRITES.duck = await loadImage('assets/shark-ducking.png').catch(()=>null);
     for (const k of ['idle','run','duck']) if (!SPRITES[k]) SPRITES[k] = genFallback(k);
   }
   function genFallback(kind){
@@ -122,9 +122,11 @@
     levelIndex = (i+levels.length)%levels.length;
     const L = levels[levelIndex];
     player.x = L.platforms[0].x + 80;
-    player.y = L.platforms[0].y - 5; // start just above the first platform
+    player.y = L.platforms[0].y - 5; // start above ground
     player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
     cam.x = 0; cam.y = 0;
+    // reset keys to avoid stuck movement
+    keys.left = keys.right = keys.up = keys.jump = keys.down = false;
   }
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
@@ -147,7 +149,7 @@
     if (levels[levelIndex].hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
     if (aabb(pbox, levels[levelIndex].goal)) loadLevel(levelIndex+1);
 
-    // Increased fall threshold so jumps don't trigger reset
+    // bigger fall buffer
     if (player.y > cvs.height + 600) loadLevel(levelIndex);
 
     const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
