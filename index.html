@@ -41,7 +41,7 @@
 
   <!-- Start Screen -->
   <div id="startScreen">
-    <img src="matt-loading.png" alt="Loading...">
+    <img src="assets/matt-loading.png" alt="Loading...">
     <button id="startButton">Start Game</button>
   </div>
 
@@ -121,7 +121,9 @@
   function loadLevel(i){
     levelIndex = (i+levels.length)%levels.length;
     const L = levels[levelIndex];
-    player.x = L.platforms[0].x + 80; player.y = 0; player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
+    player.x = L.platforms[0].x + 80;
+    player.y = L.platforms[0].y - 5; // start just above the first platform
+    player.dx=0; player.dy=0; player.onGround=false; player.state='idle';
     cam.x = 0; cam.y = 0;
   }
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
@@ -144,7 +146,9 @@
     const pbox = { x: player.x- player.w/2, y: player.y- player.h, w: player.w, h: player.h };
     if (levels[levelIndex].hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
     if (aabb(pbox, levels[levelIndex].goal)) loadLevel(levelIndex+1);
-    if (player.y > cvs.height + 200) loadLevel(levelIndex);
+
+    // Increased fall threshold so jumps don't trigger reset
+    if (player.y > cvs.height + 600) loadLevel(levelIndex);
 
     const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
 
@@ -210,7 +214,6 @@
   }
   function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs = ts; update(dt); draw(); requestAnimationFrame(loop); }
 
-  // Start button click
   document.getElementById('startButton').addEventListener('click', ()=>{
     document.getElementById('startScreen').classList.add('hidden');
     setTimeout(boot, 800);
