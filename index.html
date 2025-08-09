@@ -172,7 +172,7 @@
   // ===== Entities =====
   const player = { x:80,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false };
   const chaser = { x:0,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false,
-                   stuck:0,lastX:0, hopCD:0, sayT:0, sayCD:0, spawnGrace:0, tagGrace:0 };
+                   stuck:0,lastX:0, hopCD:0, sayT:0, sayCD:0, spawnGrace:0, tagGrace:0, coyote:0 };
   let ACTIVE = SPRITES.matt, CHASER_SET = SPRITES.nate, chaseLine = "Fix Epicor!";
   let currentChar='matt';
   let showCredits=false, showGameOver=false;
@@ -228,6 +228,15 @@
   function hasGroundAt(x, y, solids){ return solids.some(s => x>=s.x && x<=s.x+s.w && Math.abs(s.y - y) <= 2); }
   function isWallAhead(ent, solids, facing){ const probe = { x: ent.x + facing*(ent.w/2), y: ent.y - ent.h + 4, w: 6, h: ent.h - 8 }; return solids.some(s => aabb(probe, s)); }
 
+  // Estimate distance (px) from a point to next landable ground in dir (+1/-1)
+  function gapDistanceFrom(x0, dir, curY, solids){
+    for (let d = 0; d <= 260; d += 10) {
+      const gy = groundYAt(x0 + dir * d, solids);
+      if (isFinite(gy) && Math.abs(gy - curY) <= 120) return d;
+    }
+    return 300; // big/no landing
+  }
+
   // ===== Spawning & levels =====
   function spawnChaser(){
     const L = levels[levelIndex];
@@ -243,6 +252,7 @@
     chaser.stuck=0; chaser.lastX=chaser.x; chaser.hopCD=0.2; chaser.sayT=0; chaser.sayCD=1+Math.random()*1.5;
     chaser.spawnGrace = 1.25; // AI sleeps a moment
     chaser.tagGrace   = 2.00; // can't tag immediately
+    chaser.coyote = 0;
   }
 
   function loadLevel(i){
@@ -294,10 +304,14 @@
     if (keys.right){ player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing= 1; }
     if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
     if (!player.onLadder) player.dy += G*dt;
+
+    // ground or ladder jump
     if (keys.jump){
       if (player.onGround){ player.dy = -JUMP_VY; player.onGround=false; }
       else if (player.onLadder){ player.onLadder=false; player.dy = -JUMP_VY; }
     }
+
+    // Ladder detection (player)
     const pbox = pboxOf(player);
     const touchingLadder = L.ladders?.some(ld => aabb(pbox, ld));
     if (!player.onLadder){
@@ -320,6 +334,8 @@
     chaser.sayCD = Math.max(0, chaser.sayCD - dt);
     chaser.spawnGrace = Math.max(0, chaser.spawnGrace - dt);
     chaser.tagGrace   = Math.max(0, chaser.tagGrace   - dt);
+    // coyote (after-leave-ground short window)
+    if (chaser.onGround) chaser.coyote = 0.12; else chaser.coyote = Math.max(0, chaser.coyote - dt);
 
     if (chaser.spawnGrace <= 0){
       const desireRight = player.x > chaser.x + 4;
@@ -329,6 +345,7 @@
       if (!desireLeft && !desireRight) chaser.dx *= Math.pow(0.0001, dt);
       if (!chaser.onLadder) chaser.dy += G*dt;
 
+      // ladder intent
       const cbox = pboxOf(chaser);
       const touchingLadderC = L.ladders?.some(ld => aabb(cbox, ld));
       let cUp=false, cDown=false;
@@ -337,22 +354,39 @@
         else if (player.y > chaser.y + 24) { chaser.onLadder=true; cDown=true; }
       } else if (chaser.onLadder && !touchingLadderC){ chaser.onLadder=false; }
 
-      // gap/wall hop
-      if (chaser.onGround && chaser.hopCD<=0 && !chaser.onLadder){
+      // --- IMPROVED GAP/WALL HOP ---
+      if ((chaser.onGround || chaser.coyote > 0) && chaser.hopCD <= 0 && !chaser.onLadder){
         const f = chaser.facing || (desireRight?1:-1);
-        const ahead1 = chaser.x + f*(chaser.w/2 + 10);
-        const ahead2 = chaser.x + f*(chaser.w/2 + 30);
-        const gapAhead = !hasGroundAt(ahead1, chaser.y, L.platforms) || !hasGroundAt(ahead2, chaser.y, L.platforms);
+        const yTop = chaser.y;
+        const edgeProbe = chaser.w/2 + 6;
+        const nearProbe = edgeProbe + 22;
+        const farProbe  = edgeProbe + 46;
+
+        const edgeNow = !hasGroundAt(chaser.x + f*edgeProbe, yTop, L.platforms);
+        const preEdge = !hasGroundAt(chaser.x + f*nearProbe, yTop, L.platforms) &&
+                        !hasGroundAt(chaser.x + f*farProbe,  yTop, L.platforms);
         const wallAhead = isWallAhead(chaser, L.platforms, f);
-        if (gapAhead || wallAhead){
-          chaser.dy = -JUMP_VY*0.86;
+
+        if (edgeNow || preEdge || wallAhead){
+          const distToLand = gapDistanceFrom(chaser.x + f*edgeProbe, f, yTop, L.platforms);
+          let strength = 0.92;
+          if (distToLand > 60)  strength = 1.02;
+          if (distToLand > 120) strength = 1.16;
+
+          chaser.dy = -JUMP_VY * strength;
+          chaser.dx += f * 120; // horizontal nudge
+          chaser.dx = Math.max(-MAX_DX, Math.min(MAX_DX, chaser.dx));
+
           chaser.onGround = false;
-          chaser.hopCD = 0.35;
+          chaser.hopCD = 0.40;
+          chaser.coyote = 0;
         }
       }
+
       moveAndCollide(chaser, {up:cUp, down:cDown}, dt, L.platforms);
     } else {
-      if (!chaser.onLadder) chaser.dy += G*dt; // idle physics during spawn grace
+      // idle physics during spawn grace
+      if (!chaser.onLadder) chaser.dy += G*dt;
       moveAndCollide(chaser, {up:false, down:false}, dt, L.platforms);
     }
 
