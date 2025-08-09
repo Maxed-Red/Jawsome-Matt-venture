@@ -28,7 +28,6 @@
       background: #ffffffcc; box-shadow: 0 2px 6px rgba(0,0,0,.25);
       font-size: 28px; pointer-events: auto; touch-action: manipulation;
     }
-    /* Hide touch UI only on mouse/keyboard desktop */
     @media (hover: hover) and (pointer: fine) { #touch { display:none; } }
 
     /* --- Start screen --- */
@@ -82,8 +81,10 @@
     <button id="btnJump" aria-label="Jump">⤒</button>
   </div>
 
-  <!-- Start screen (tap image to start) -->
-  <div id="startScreen"><img id="startImage" src="assets/matt-loading.png" alt="Start" /></div>
+  <!-- Start screen (tap image or anywhere to start) -->
+  <div id="startScreen" role="button" aria-label="Start">
+    <img id="startImage" src="assets/matt-loading.png" alt="Start" />
+  </div>
 
   <!-- Character select -->
   <div id="selectScreen" role="dialog" aria-modal="true">
@@ -170,14 +171,8 @@
 
   // ===== Entities =====
   const player = { x:80,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false };
-  // replace your existing chaser = { ... } with this:
-const chaser = {
-  x:0,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false,
-  stuck:0, lastX:0, hopCD:0, sayT:0, sayCD:0,
-  spawnGrace:0,   // time AI stays idle after spawning (sec)
-  tagGrace:0      // time before a tag can end the run (sec)
-};
-
+  const chaser = { x:0,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false,
+                   stuck:0,lastX:0, hopCD:0, sayT:0, sayCD:0, spawnGrace:0, tagGrace:0 };
   let ACTIVE = SPRITES.matt, CHASER_SET = SPRITES.nate, chaseLine = "Fix Epicor!";
   let currentChar='matt';
   let showCredits=false, showGameOver=false;
@@ -217,7 +212,7 @@ const chaser = {
     { platforms:[ {x:-240,y:420,w:560,h:40}, {x:520,y:340,w:160,h:20}, {x:760,y:260,w:160,h:20}, {x:1000,y:180,w:160,h:20}, {x:1240,y:260,w:160,h:20}, {x:1480,y:340,w:160,h:20}, {x:1720,y:420,w:560,h:40} ],
       ladders:[ {x:960,y:120,w:40,h:300} ], goal:{x:2040,y:318,w:30,h:142}, hazards:[] },
 
-    // 10: Finale -> Credits
+    /* 10: Finale -> Credits */
     { platforms:[ {x:-200,y:420,w:2400,h:40} ],
       ladders:[ {x:600,y:240,w:40,h:180}, {x:1200,y:240,w:40,h:180}, {x:1800,y:240,w:40,h:180} ],
       goal:{x:2080,y:318,w:30,h:142},
@@ -226,55 +221,29 @@ const chaser = {
   ];
   let levelIndex=0; const cam={x:0,y:0};
 
+  // ===== Utils =====
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
   function pboxOf(ent){ return { x: ent.x-ent.w/2, y: ent.y-ent.h, w:ent.w, h:ent.h }; }
+  function groundYAt(x, solids){ let top=Infinity; for (const s of solids) if (x>=s.x && x<=s.x+s.w) top=Math.min(top, s.y); return top; }
+  function hasGroundAt(x, y, solids){ return solids.some(s => x>=s.x && x<=s.x+s.w && Math.abs(s.y - y) <= 2); }
+  function isWallAhead(ent, solids, facing){ const probe = { x: ent.x + facing*(ent.w/2), y: ent.y - ent.h + 4, w: 6, h: ent.h - 8 }; return solids.some(s => aabb(probe, s)); }
 
-  function groundYAt(x, solids){
-    let top=Infinity;
-    for (const s of solids) if (x>=s.x && x<=s.x+s.w) top=Math.min(top, s.y);
-    return top;
-  }
-  function hasGroundAt(x, y, solids){
-    return solids.some(s => x>=s.x && x<=s.x+s.w && Math.abs(s.y - y) <= 2);
-  }
-  function isWallAhead(ent, solids, facing){
-    const probe = { x: ent.x + facing*(ent.w/2), y: ent.y - ent.h + 4, w: 6, h: ent.h - 8 };
-    return solids.some(s => aabb(probe, s));
-  }
-
+  // ===== Spawning & levels =====
   function spawnChaser(){
-  const L = levels[levelIndex];
-  // target far behind player
-  const desired = player.x - 600;
-
-  // try to find ground under/left of desired
-  let x = desired;
-  let gy = groundYAt(x, L.platforms);
-  if (!isFinite(gy)) {
-    for (let off=100; off<=1200 && !isFinite(gy); off+=100) {
-      x = desired - off;
-      gy = groundYAt(x, L.platforms);
+    const L = levels[levelIndex];
+    const desired = player.x - 600; // far behind
+    let x = desired;
+    let gy = groundYAt(x, L.platforms);
+    if (!isFinite(gy)) {
+      for (let off=100; off<=1200 && !isFinite(gy); off+=100) { x = desired - off; gy = groundYAt(x, L.platforms); }
     }
+    if (!isFinite(gy)) { const p0=L.platforms[0]; x=p0.x+40; gy=p0.y; }
+    chaser.x = x; chaser.y = gy - 5;
+    chaser.dx=0; chaser.dy=0; chaser.onGround=false; chaser.onLadder=false; chaser.state='idle';
+    chaser.stuck=0; chaser.lastX=chaser.x; chaser.hopCD=0.2; chaser.sayT=0; chaser.sayCD=1+Math.random()*1.5;
+    chaser.spawnGrace = 1.25; // AI sleeps a moment
+    chaser.tagGrace   = 2.00; // can't tag immediately
   }
-  // fallback: first platform near level start
-  if (!isFinite(gy)) {
-    const p0 = L.platforms[0];
-    x = p0.x + 40;
-    gy = p0.y;
-  }
-
-  chaser.x = x;
-  chaser.y = gy - 5;
-  chaser.dx=0; chaser.dy=0;
-  chaser.onGround=false; chaser.onLadder=false; chaser.state='idle';
-  chaser.stuck=0; chaser.lastX=chaser.x; chaser.hopCD=0.2;
-  chaser.sayT=0; chaser.sayCD=1+Math.random()*1.5;
-
-  // NEW: grace so you don't get tagged instantly
-  chaser.spawnGrace = 1.25;  // AI sleeps ~1.25s
-  chaser.tagGrace   = 2.00;  // can't tag you for ~2s
-}
-
 
   function loadLevel(i){
     showCredits=false; showGameOver=false;
@@ -291,27 +260,16 @@ const chaser = {
 
   // ===== Physics helpers (entity-agnostic) =====
   function moveAndCollide(ent, intents, dt, solids){
-    // Horizontal first
-    ent.x += ent.dx * dt;
-    collideAxis(ent, 'x', solids);
-
-    // Vertical (ladder overrides gravity displacement)
-    if (ent.onLadder){
-      let vy=0; if (intents.up) vy-=CLIMB_SPEED; if (intents.down) vy+=CLIMB_SPEED;
-      ent.y += vy*dt; ent.dy = 0;
-    } else {
-      ent.y += ent.dy * dt;
-    }
-    ent.onGround=false;
-    collideAxis(ent, 'y', solids);
+    ent.x += ent.dx * dt; collideAxis(ent, 'x', solids);
+    if (ent.onLadder){ let vy=0; if (intents.up) vy-=CLIMB_SPEED; if (intents.down) vy+=CLIMB_SPEED; ent.y += vy*dt; ent.dy = 0; }
+    else { ent.y += ent.dy * dt; }
+    ent.onGround=false; collideAxis(ent, 'y', solids);
   }
-
   function collideAxis(ent, axis, solids){
     const inset = (axis==='x')?1:0;
     const box={ x:ent.x-ent.w/2, y:ent.y-ent.h+inset, w:ent.w, h:ent.h-inset*2 };
     for (const s of solids){
-      const hit = (box.x < s.x + s.w) && (box.x + box.w > s.x) &&
-                  (box.y < s.y + s.h) && (box.y + box.h > s.y);
+      const hit = (box.x < s.x + s.w) && (box.x + box.w > s.x) && (box.y < s.y + s.h) && (box.y + box.h > s.y);
       if (!hit) continue;
       if (axis==='x'){
         if (ent.dx>0){ box.x=s.x-box.w; ent.x=box.x+ent.w/2; ent.dx=0; }
@@ -325,140 +283,120 @@ const chaser = {
 
   // ===== Update =====
   function update(dt){
-  if (showCredits || showGameOver){
-    if (keys.restart){ loadLevel(showCredits?0:levelIndex); keys.restart=false; }
-    return;
-  }
-
-  const L = levels[levelIndex];
-
-  // --- PLAYER CONTROL ---
-  if (keys.left){ player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing=-1; }
-  if (keys.right){ player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing= 1; }
-  if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
-
-  if (!player.onLadder) player.dy += G*dt;
-
-  // Jump from ground OR ladder
-  if (keys.jump){
-    if (player.onGround){ player.dy = -JUMP_VY; player.onGround=false; }
-    else if (player.onLadder){ player.onLadder=false; player.dy = -JUMP_VY; }
-  }
-
-  // Ladder detection (player)
-  const pbox = pboxOf(player);
-  const touchingLadder = L.ladders?.some(ld => aabb(pbox, ld));
-  if (!player.onLadder){
-    if (touchingLadder && (keys.upIntent || keys.downIntent)){
-      player.onLadder=true;
-      const ld = L.ladders.find(ld=>aabb(pbox,ld));
-      if (ld){ player.x = Math.max(ld.x + player.w/2, Math.min(ld.x + ld.w - player.w/2, player.x)); }
+    if (showCredits || showGameOver){
+      if (keys.restart){ loadLevel(showCredits?0:levelIndex); keys.restart=false; }
+      return;
     }
-  } else if (!touchingLadder){ player.onLadder=false; }
+    const L = levels[levelIndex];
 
-  moveAndCollide(player, {up:keys.upIntent, down:keys.downIntent}, dt, L.platforms);
-
-  // hazards/goal/fall
-  if (L.hazards.some(h=>aabb(pboxOf(player),h))) loadLevel(levelIndex);
-  if (aabb(pboxOf(player), L.goal)){ if (L.credits) showCredits=true; else loadLevel(levelIndex+1); }
-  if (player.y > cvs.height + 600) loadLevel(levelIndex);
-
-  // --- CHASER AI ---
-  chaser.hopCD = Math.max(0, chaser.hopCD - dt);
-  chaser.sayT  = Math.max(0, chaser.sayT  - dt);
-  chaser.sayCD = Math.max(0, chaser.sayCD - dt);
-  chaser.spawnGrace = Math.max(0, chaser.spawnGrace - dt);
-  chaser.tagGrace   = Math.max(0, chaser.tagGrace   - dt);
-
-  if (chaser.spawnGrace <= 0){
-    // choose intents
-    const desireRight = player.x > chaser.x + 4;
-    const desireLeft  = player.x < chaser.x - 4;
-    if (desireLeft)  { chaser.dx = Math.max(chaser.dx - accel*0.9*dt, -MAX_DX*0.9); chaser.facing=-1; }
-    if (desireRight) { chaser.dx = Math.min(chaser.dx + accel*0.9*dt,  MAX_DX*0.9); chaser.facing= 1; }
-    if (!desireLeft && !desireRight) chaser.dx *= Math.pow(0.0001, dt);
-
-    if (!chaser.onLadder) chaser.dy += G*dt;
-
-    // ladder use
-    const cbox = pboxOf(chaser);
-    const touchingLadderC = L.ladders?.some(ld => aabb(cbox, ld));
-    let cUp=false, cDown=false;
-    if (touchingLadderC){
-      if (player.y < chaser.y - 24) { chaser.onLadder=true; cUp=true; }
-      else if (player.y > chaser.y + 24) { chaser.onLadder=true; cDown=true; }
-    } else if (chaser.onLadder && !touchingLadderC){ chaser.onLadder=false; }
-
-    // gap/wall hop
-    if (chaser.onGround && chaser.hopCD<=0 && !chaser.onLadder){
-      const f = chaser.facing || (desireRight?1:-1);
-      const ahead1 = chaser.x + f*(chaser.w/2 + 10);
-      const ahead2 = chaser.x + f*(chaser.w/2 + 30);
-      const gapAhead = !hasGroundAt(ahead1, chaser.y, L.platforms) || !hasGroundAt(ahead2, chaser.y, L.platforms);
-      const wallAhead = isWallAhead(chaser, L.platforms, f);
-      if (gapAhead || wallAhead){
-        chaser.dy = -JUMP_VY*0.86;
-        chaser.onGround = false;
-        chaser.hopCD = 0.35;
+    // --- PLAYER CONTROL ---
+    if (keys.left){ player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing=-1; }
+    if (keys.right){ player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing= 1; }
+    if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
+    if (!player.onLadder) player.dy += G*dt;
+    if (keys.jump){
+      if (player.onGround){ player.dy = -JUMP_VY; player.onGround=false; }
+      else if (player.onLadder){ player.onLadder=false; player.dy = -JUMP_VY; }
+    }
+    const pbox = pboxOf(player);
+    const touchingLadder = L.ladders?.some(ld => aabb(pbox, ld));
+    if (!player.onLadder){
+      if (touchingLadder && (keys.upIntent || keys.downIntent)){
+        player.onLadder=true;
+        const ld = L.ladders.find(ld=>aabb(pbox,ld));
+        if (ld){ player.x = Math.max(ld.x + player.w/2, Math.min(ld.x + ld.w - player.w/2, player.x)); }
       }
+    } else if (!touchingLadder){ player.onLadder=false; }
+    moveAndCollide(player, {up:keys.upIntent, down:keys.downIntent}, dt, L.platforms);
+
+    // hazards/goal/fall
+    if (L.hazards.some(h=>aabb(pboxOf(player),h))) loadLevel(levelIndex);
+    if (aabb(pboxOf(player), L.goal)){ if (L.credits) showCredits=true; else loadLevel(levelIndex+1); }
+    if (player.y > cvs.height + 600) loadLevel(levelIndex);
+
+    // --- CHASER AI ---
+    chaser.hopCD = Math.max(0, chaser.hopCD - dt);
+    chaser.sayT  = Math.max(0, chaser.sayT  - dt);
+    chaser.sayCD = Math.max(0, chaser.sayCD - dt);
+    chaser.spawnGrace = Math.max(0, chaser.spawnGrace - dt);
+    chaser.tagGrace   = Math.max(0, chaser.tagGrace   - dt);
+
+    if (chaser.spawnGrace <= 0){
+      const desireRight = player.x > chaser.x + 4;
+      const desireLeft  = player.x < chaser.x - 4;
+      if (desireLeft)  { chaser.dx = Math.max(chaser.dx - accel*0.9*dt, -MAX_DX*0.9); chaser.facing=-1; }
+      if (desireRight) { chaser.dx = Math.min(chaser.dx + accel*0.9*dt,  MAX_DX*0.9); chaser.facing= 1; }
+      if (!desireLeft && !desireRight) chaser.dx *= Math.pow(0.0001, dt);
+      if (!chaser.onLadder) chaser.dy += G*dt;
+
+      const cbox = pboxOf(chaser);
+      const touchingLadderC = L.ladders?.some(ld => aabb(cbox, ld));
+      let cUp=false, cDown=false;
+      if (touchingLadderC){
+        if (player.y < chaser.y - 24) { chaser.onLadder=true; cUp=true; }
+        else if (player.y > chaser.y + 24) { chaser.onLadder=true; cDown=true; }
+      } else if (chaser.onLadder && !touchingLadderC){ chaser.onLadder=false; }
+
+      // gap/wall hop
+      if (chaser.onGround && chaser.hopCD<=0 && !chaser.onLadder){
+        const f = chaser.facing || (desireRight?1:-1);
+        const ahead1 = chaser.x + f*(chaser.w/2 + 10);
+        const ahead2 = chaser.x + f*(chaser.w/2 + 30);
+        const gapAhead = !hasGroundAt(ahead1, chaser.y, L.platforms) || !hasGroundAt(ahead2, chaser.y, L.platforms);
+        const wallAhead = isWallAhead(chaser, L.platforms, f);
+        if (gapAhead || wallAhead){
+          chaser.dy = -JUMP_VY*0.86;
+          chaser.onGround = false;
+          chaser.hopCD = 0.35;
+        }
+      }
+      moveAndCollide(chaser, {up:cUp, down:cDown}, dt, L.platforms);
+    } else {
+      if (!chaser.onLadder) chaser.dy += G*dt; // idle physics during spawn grace
+      moveAndCollide(chaser, {up:false, down:false}, dt, L.platforms);
     }
 
-    moveAndCollide(chaser, {up:cUp, down:cDown}, dt, L.platforms);
+    // Chaser recover if stuck or fell
+    const moved = Math.abs(chaser.x - chaser.lastX) > 1;
+    chaser.stuck = moved ? 0 : (chaser.stuck + dt);
+    chaser.lastX = chaser.x;
+    if (chaser.y > cvs.height + 800 || chaser.stuck > 3){ spawnChaser(); }
 
-  } else {
-    // during spawn grace: idle physics only
-    if (!chaser.onLadder) chaser.dy += G*dt;
-    moveAndCollide(chaser, {up:false, down:false}, dt, L.platforms);
+    // Tag = game over (respect tag grace)
+    if (chaser.tagGrace<=0 && aabb(pboxOf(player), pboxOf(chaser))) showGameOver=true;
+
+    // Occasional speech bubble (nearby & active)
+    const near = Math.abs(chaser.x - player.x) < 500;
+    if (near && chaser.sayCD<=0 && chaser.spawnGrace<=0){
+      chaser.sayT = 1.4;
+      chaser.sayCD = 3 + Math.random()*3;
+    }
+
+    // camera
+    const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
+
+    // states
+    player.state = player.onLadder?'climb': (keys.downIntent&&player.onGround?'duck': (!player.onGround?'air': (Math.abs(player.dx)>40?'run':'idle')));
+    chaser.state = chaser.onLadder?'climb': (!chaser.onGround?'air': (Math.abs(chaser.dx)>40?'run':'idle'));
+    player.animTime += dt; chaser.animTime += dt;
   }
 
-  // Chaser catchup if stuck or fell
-  const moved = Math.abs(chaser.x - chaser.lastX) > 1;
-  chaser.stuck = moved ? 0 : (chaser.stuck + dt);
-  chaser.lastX = chaser.x;
-  if (chaser.y > cvs.height + 800 || chaser.stuck > 3){ spawnChaser(); }
-
-  // Tag = game over (but NOT during tag grace)
-  if (chaser.tagGrace<=0 && aabb(pboxOf(player), pboxOf(chaser))) showGameOver=true;
-
-  // Occasional speech bubble (only when active)
-  const near = Math.abs(chaser.x - player.x) < 500;
-  if (near && chaser.sayCD<=0 && chaser.spawnGrace<=0){
-    chaser.sayT = 1.4;
-    chaser.sayCD = 3 + Math.random()*3;
-  }
-
-  // camera
-  const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
-
-  // states
-  player.state = player.onLadder?'climb': (keys.downIntent&&player.onGround?'duck': (!player.onGround?'air': (Math.abs(player.dx)>40?'run':'idle')));
-  chaser.state = chaser.onLadder?'climb': (!chaser.onGround?'air': (Math.abs(chaser.dx)>40?'run':'idle')));
-  player.animTime += dt; chaser.animTime += dt;
-}
-
-
-  // --- Drawing helpers ---
+  // ===== Drawing helpers =====
   function rr(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r);
     g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
-
   function drawPlatform(p){ ctx.fillStyle='rgba(0,0,0,.12)'; rr(ctx,p.x+3,p.y+6,p.w,p.h,10); ctx.fill(); ctx.fillStyle='#67b95b';
     rr(ctx,p.x,p.y,p.w,p.h,10); ctx.fill(); ctx.fillStyle='#4a8f42'; rr(ctx,p.x,p.y,p.w,Math.min(6,p.h),10); ctx.fill(); }
-
   function drawLadder(ld){ ctx.fillStyle='#caa96a'; ctx.fillRect(ld.x+6, ld.y, 8, ld.h); ctx.fillRect(ld.x+ld.w-14, ld.y, 8, ld.h);
     for(let r=0;r<Math.floor(ld.h/20);r++){ const ry=ld.y+r*20+8; ctx.fillRect(ld.x+12, ry, ld.w-24, 4); } }
-
   function drawSpikeStrip(x,y,w,h){ const n=Math.max(1,Math.floor(w/12));
     for(let i=0;i<n;i++){ const sx=x+i*(w/n); ctx.fillStyle='#e04a4a'; ctx.beginPath(); ctx.moveTo(sx,y+h); ctx.lineTo(sx+(w/n)/2,y); ctx.lineTo(sx+(w/n),y+h); ctx.closePath(); ctx.fill(); } }
-
   function drawCloud(x,y,s){ ctx.fillStyle='rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(x,y,16*s,0,Math.PI*2);
     ctx.arc(x+20*s,y-6*s,14*s,0,Math.PI*2); ctx.arc(x+40*s,y,18*s,0,Math.PI*2); ctx.fill(); }
-
   function drawEntity(ent, set){
     let img=set.idle; if (ent.state==='run'||ent.state==='air') img=set.run; else if (ent.state==='duck') img=set.duck; else if (ent.state==='climb') img=set.climb;
     const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height, s=SPRITE_H/fh;
     ctx.save(); ctx.translate(ent.x, ent.y); ctx.scale(ent.facing*s, s); ctx.translate(-fw/2, -fh); ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0); ctx.restore();
   }
-
   function speechBubble(x,y,text){
     ctx.font='14px system-ui, sans-serif'; const pad=8; const tw=ctx.measureText(text).width;
     const bw=tw+pad*2, bh=28; const bx = x - bw/2, by = y - 60;
@@ -467,7 +405,6 @@ const chaser = {
     ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.fillText(text, x, by + 18);
     ctx.beginPath(); ctx.moveTo(x-6, by+bh); ctx.lineTo(x+6, by+bh); ctx.lineTo(x, by+bh+8); ctx.closePath(); ctx.fill();
   }
-
   function drawCredits(){
     ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,cvs.width,cvs.height);
     const cardW=Math.min(520,cvs.width-60), cardH=220, x=(cvs.width-cardW)/2, y=(cvs.height-cardH)/2;
@@ -477,7 +414,6 @@ const chaser = {
     ctx.font='20px system-ui, sans-serif'; ctx.fillText('a special thanks to Nate and Matt', cvs.width/2, y+108);
     ctx.font='16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y+160);
   }
-
   function drawGameOver(){
     ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,cvs.width,cvs.height);
     const cardW=Math.min(520,cvs.width-60), cardH=220, x=(cvs.width-cardW)/2, y=(cvs.height-cardH)/2;
@@ -488,7 +424,6 @@ const chaser = {
     ctx.font='20px system-ui, sans-serif'; ctx.fillText(`Caught by ${who}!`, cvs.width/2, y+108);
     ctx.font='16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y+160);
   }
-
   function draw(){
     ctx.clearRect(0,0,cvs.width,cvs.height);
     const grd=ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle=grd; ctx.fillRect(0,0,cvs.width,cvs.height);
@@ -502,14 +437,9 @@ const chaser = {
     const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d';
     ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+42,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
 
-    // draw chaser first, then player
     drawEntity(chaser, CHASER_SET);
     drawEntity(player, ACTIVE);
-    // occasional speech
-    if (chaser.sayT > 0){
-      speechBubble(chaser.x, chaser.y - 20, chaseLine);
-    }
-
+    if (chaser.sayT > 0){ speechBubble(chaser.x, chaser.y - 20, chaseLine); }
     ctx.restore();
 
     if (showCredits) drawCredits();
@@ -517,14 +447,13 @@ const chaser = {
   }
 
   // ===== Loop =====
-  let lastTs;
-  function loop(ts){ const dt=Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
+  let lastTs, running=false;
+  function loop(ts){ if(!running) return; const dt=Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
 
   // ===== Character select wiring =====
   const selectScreen = document.getElementById('selectScreen');
   const mattPortrait = document.getElementById('mattPortrait');
   const natePortrait = document.getElementById('natePortrait');
-
   function drawPortrait(canvas, img){
     const g=canvas.getContext('2d'); g.clearRect(0,0,canvas.width,canvas.height);
     const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height; const s=Math.min(canvas.height/fh, canvas.width/fw)*0.9;
@@ -539,18 +468,25 @@ const chaser = {
       else { ACTIVE=SPRITES.nate; CHASER_SET=SPRITES.matt; chaseLine="Stop Making Bad Cables"; }
       selectScreen.classList.remove('show');
       loadLevel(0);
-      requestAnimationFrame(loop);
+      running=true; requestAnimationFrame(loop);
     });
   }
 
-  // Start -> load sprites -> choose character
-  document.getElementById('startImage').addEventListener('click', async ()=>{
+  // ===== Start flow =====
+  let booted=false;
+  async function startGame(){
+    if (booted) return;
+    booted = true;
     document.getElementById('startScreen').classList.add('hidden');
     await ensureSprites();
-    ACTIVE = SPRITES.matt; // temporary until pick
-    CHASER_SET = SPRITES.nate;
+    ACTIVE = SPRITES.matt; CHASER_SET = SPRITES.nate; // temp until pick
     showSelect();
-  }, { passive:true });
+  }
+  // start on click, pointer, or Enter/Space
+  const startScreen = document.getElementById('startScreen');
+  startScreen.addEventListener('click', startGame, { passive:true });
+  startScreen.addEventListener('pointerdown', startGame, { passive:true });
+  window.addEventListener('keydown', (e)=>{ if (e.code==='Enter' || e.code==='Space') startGame(); }, { passive:true });
 
   // Tap anywhere to restart while overlay visible
   document.addEventListener('pointerdown', ()=>{
