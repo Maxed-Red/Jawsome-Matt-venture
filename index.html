@@ -55,7 +55,7 @@
     .charBtn {
       display:flex; flex-direction:column; align-items:center; gap:8px;
       border:0; border-radius:14px; padding:14px; background:#f6f7fb;
-      cursor:pointer; transition: transform .08s ease, box-shadow .08s ease;
+      cursor:pointer; transition: transform .08s ease;
     }
     .charBtn:active { transform: translateY(1px); }
     .portrait { width:110px; height:110px; image-rendering: pixelated; }
@@ -99,7 +99,7 @@
           <div class="charLabel">Lil’ Nate</div>
         </button>
       </div>
-      <div class="hint">Tip: Arrow/WASD to move, Space to jump, Down to duck. Climb with the stick ↑/↓ — and you can now jump off ladders.</div>
+      <div class="hint">Move: Arrow/WASD • Jump: Space • Duck: Down • Climb: stick ↑/↓ • You can jump off ladders.</div>
     </div>
   </div>
 
@@ -109,125 +109,83 @@
   const ctx = cvs.getContext('2d', { alpha:false });
   function resize(){ cvs.width = innerWidth; cvs.height = innerHeight; }
   addEventListener('resize', resize, { passive:true }); resize();
-
-  // Focus canvas so desktop keys always work
-  function focusCanvas(){ try{ cvs.focus(); }catch{} }
-  focusCanvas();
+  function focusCanvas(){ try{ cvs.focus(); }catch{} } focusCanvas();
 
   // ===== Assets =====
-  // Two selectable sets: 'matt' (shark-*.png) and 'nate' (nate-*.png or nate.png)
   const SPRITES = { matt:{}, nate:{} };
-  const SPRITE_H = 96; // consistent on-screen sprite height
-
+  const SPRITE_H = 96;
   const loadImage = (url)=> new Promise((res,rej)=>{ const i=new Image(); i.src=url; i.onload=()=>res(i); i.onerror=rej; });
 
-  const fallback = (label)=>{
-    const c=document.createElement('canvas'); c.width=64; c.height=96;
-    const g=c.getContext('2d'); g.fillStyle='#5a86ff'; g.fillRect(0,0,64,96);
-    g.fillStyle='#fff'; g.font='12px system-ui'; g.fillText(label,6,16); return c;
-  };
+  const fallback = (label)=>{ const c=document.createElement('canvas'); c.width=64; c.height=96; const g=c.getContext('2d'); g.fillStyle='#5a86ff'; g.fillRect(0,0,64,96); g.fillStyle='#fff'; g.font='12px system-ui'; g.fillText(label,6,16); return c; };
 
   async function loadSet(prefix, singleAlt, target){
     const safe = async (p,f)=>{ try{ return await p; }catch{ return f; } };
-    // Try per-state
     target.idle = await safe(loadImage(`assets/${prefix}-idle.png`), null);
     target.run  = await safe(loadImage(`assets/${prefix}-running.png`), null);
     target.duck = await safe(loadImage(`assets/${prefix}-ducking.png`), null);
     target.climb= await safe(loadImage(`assets/${prefix}-climb.png`), null);
-
-    // If any missing and we have a singleAlt (e.g., nate.png), reuse it
-    let single = null;
-    if (singleAlt){
-      single = await safe(loadImage(`assets/${singleAlt}`), null);
-    }
-    for (const k of ['idle','run','duck','climb']){
-      if (!target[k]) target[k] = single || fallback(`${prefix}-${k}`);
-    }
+    let single = null; if (singleAlt) single = await safe(loadImage(`assets/${singleAlt}`), null);
+    for (const k of ['idle','run','duck','climb']) if (!target[k]) target[k] = single || fallback(`${prefix}-${k}`);
   }
-
-  async function ensureSprites(){
-    await loadSet('shark', null, SPRITES.matt);
-    await loadSet('nate', 'nate.png', SPRITES.nate);
-  }
+  async function ensureSprites(){ await loadSet('shark', null, SPRITES.matt); await loadSet('nate', 'nate.png', SPRITES.nate); }
 
   // ===== Input =====
   const keys = { left:false, right:false, upIntent:false, downIntent:false, jump:false, restart:false };
   const keydown = (e)=>{
     if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','KeyA','KeyD','KeyW','KeyS','KeyR'].includes(e.code)) e.preventDefault();
-    if (e.code==='ArrowLeft' || e.code==='KeyA') keys.left = true;
-    if (e.code==='ArrowRight'|| e.code==='KeyD') keys.right = true;
-    if (e.code==='ArrowUp'   || e.code==='KeyW') keys.upIntent = true;
-    if (e.code==='ArrowDown' || e.code==='KeyS') keys.downIntent = true;
-    if (e.code==='Space') keys.jump = true;
-    if (e.code==='KeyR') keys.restart = true;
+    if (e.code==='ArrowLeft'||e.code==='KeyA') keys.left=true;
+    if (e.code==='ArrowRight'||e.code==='KeyD') keys.right=true;
+    if (e.code==='ArrowUp'||e.code==='KeyW') keys.upIntent=true;
+    if (e.code==='ArrowDown'||e.code==='KeyS') keys.downIntent=true;
+    if (e.code==='Space') keys.jump=true;
+    if (e.code==='KeyR') keys.restart=true;
   };
   const keyup = (e)=>{
     if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','KeyA','KeyD','KeyW','KeyS','KeyR'].includes(e.code)) e.preventDefault();
-    if (e.code==='ArrowLeft' || e.code==='KeyA') keys.left = false;
-    if (e.code==='ArrowRight'|| e.code==='KeyD') keys.right = false;
-    if (e.code==='ArrowUp'   || e.code==='KeyW') keys.upIntent = false;
-    if (e.code==='ArrowDown' || e.code==='KeyS') keys.downIntent = false;
-    if (e.code==='Space') keys.jump = false;
-    if (e.code==='KeyR') keys.restart = false;
+    if (e.code==='ArrowLeft'||e.code==='KeyA') keys.left=false;
+    if (e.code==='ArrowRight'||e.code==='KeyD') keys.right=false;
+    if (e.code==='ArrowUp'||e.code==='KeyW') keys.upIntent=false;
+    if (e.code==='ArrowDown'||e.code==='KeyS') keys.downIntent=false;
+    if (e.code==='Space') keys.jump=false;
+    if (e.code==='KeyR') keys.restart=false;
   };
   window.addEventListener('keydown', keydown, { passive:false });
   window.addEventListener('keyup',   keyup,   { passive:false });
 
-  // Touch joystick (2D for duck & climb) + jump
+  // Touch joystick (2D) + jump
   const joy = document.getElementById('joystick');
   const stick = document.getElementById('stick');
-  let joyActive=false, joyStartX=0, joyStartY=0;
-  const JOY_MAX = 44, DEAD = 10;
+  let joyActive=false, joyStartX=0, joyStartY=0; const JOY_MAX = 44, DEAD = 10;
+  function setJoyFrom(dx,dy){ dx=Math.max(-JOY_MAX,Math.min(JOY_MAX,dx)); dy=Math.max(-JOY_MAX,Math.min(JOY_MAX,dy));
+    stick.style.transform=`translate(${dx}px,${dy}px)`; keys.left=dx<-DEAD; keys.right=dx>DEAD; keys.upIntent=dy<-DEAD; keys.downIntent=dy>DEAD; }
+  joy.addEventListener('pointerdown', e=>{ joyActive=true; joy.setPointerCapture(e.pointerId); joyStartX=e.clientX; joyStartY=e.clientY; setJoyFrom(0,0); });
+  joy.addEventListener('pointermove', e=>{ if(!joyActive) return; setJoyFrom(e.clientX-joyStartX, e.clientY-joyStartY); });
+  const joyUp=()=>{ joyActive=false; setJoyFrom(0,0); }; ['pointerup','pointercancel','pointerleave'].forEach(t=>joy.addEventListener(t,joyUp));
+  document.getElementById('btnJump').addEventListener('pointerdown', e=>{ e.preventDefault(); keys.jump=true; });
+  document.getElementById('btnJump').addEventListener('pointerup',   e=>{ e.preventDefault(); keys.jump=false; });
 
-  const setJoyFrom = (dx, dy)=>{
-    dx = Math.max(-JOY_MAX, Math.min(JOY_MAX, dx));
-    dy = Math.max(-JOY_MAX, Math.min(JOY_MAX, dy));
-    stick.style.transform = `translate(${dx}px, ${dy}px)`;
-    keys.left  = dx < -DEAD;
-    keys.right = dx >  DEAD;
-    keys.upIntent   = dy < -DEAD;
-    keys.downIntent = dy >  DEAD;
-  };
-
-  joy.addEventListener('pointerdown', e=>{
-    joyActive=true; joy.setPointerCapture(e.pointerId);
-    joyStartX = e.clientX; joyStartY = e.clientY;
-    setJoyFrom(0,0);
-  });
-  joy.addEventListener('pointermove', e=>{
-    if(!joyActive) return;
-    setJoyFrom(e.clientX - joyStartX, e.clientY - joyStartY);
-  });
-  const joyUp = ()=>{ joyActive=false; setJoyFrom(0,0); };
-  joy.addEventListener('pointerup', joyUp);
-  joy.addEventListener('pointercancel', joyUp);
-  joy.addEventListener('pointerleave', joyUp);
-
-  const btnJump = document.getElementById('btnJump');
-  btnJump.addEventListener('pointerdown', e=>{ e.preventDefault(); keys.jump=true; });
-  btnJump.addEventListener('pointerup',   e=>{ e.preventDefault(); keys.jump=false; });
-
-  // ===== Game physics =====
+  // ===== Game constants =====
   const G=2000, MAX_DX=360, JUMP_VY=700, accel=1800, CLIMB_SPEED=220;
-  const player = { x:80, y:0, w:48, h:72, dx:0, dy:0, onGround:false, facing:1, animTime:0, state:'idle', onLadder:false };
+  const hudEl = document.getElementById('hud');
 
-  // Active character sprites (set after selection)
-  let ACTIVE = SPRITES.matt;
-  let currentChar = 'matt';
+  // ===== Entities =====
+  const player = { x:80,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false };
+  const chaser = { x:0,y:0,w:48,h:72,dx:0,dy:0,onGround:false,facing:1,animTime:0,state:'idle',onLadder:false,
+                   stuck:0,lastX:0, hopCD:0, sayT:0, sayCD:0 };
+  let ACTIVE = SPRITES.matt, CHASER_SET = SPRITES.nate, chaseLine = "Fix Epicor!";
+  let currentChar='matt';
+  let showCredits=false, showGameOver=false;
 
-  // ===== Levels (10, last shows credits) =====
+  // ===== Levels (10, last -> credits) =====
   const levels = [
     { platforms:[ {x:-200,y:420,w:700,h:40}, {x:650,y:360,w:170,h:22}, {x:880,y:420,w:500,h:40} ],
-      ladders:[ {x:820,y:240,w:40,h:180} ],
-      goal:{x:1320,y:318,w:30,h:142}, hazards:[] },
+      ladders:[ {x:820,y:240,w:40,h:180} ], goal:{x:1320,y:318,w:30,h:142}, hazards:[] },
 
     { platforms:[ {x:-200,y:420,w:480,h:40}, {x:420,y:360,w:160,h:20}, {x:700,y:330,w:150,h:20}, {x:980,y:360,w:160,h:20}, {x:1260,y:420,w:520,h:40} ],
-      ladders:[ {x:660,y:230,w:38,h:190} ],
-      goal:{x:1680,y:318,w:30,h:142}, hazards:[ {x:870,y:402,w:70,h:18} ] },
+      ladders:[ {x:660,y:230,w:38,h:190} ], goal:{x:1680,y:318,w:30,h:142}, hazards:[ {x:870,y:402,w:70,h:18} ] },
 
     { platforms:[ {x:-220,y:420,w:560,h:40}, {x:520,y:340,w:180,h:20}, {x:860,y:300,w:180,h:20}, {x:1220,y:340,w:180,h:20}, {x:1560,y:420,w:520,h:40} ],
-      ladders:[ {x:1180,y:220,w:38,h:200} ],
-      goal:{x:1960,y:318,w:30,h:142}, hazards:[] },
+      ladders:[ {x:1180,y:220,w:38,h:200} ], goal:{x:1960,y:318,w:30,h:142}, hazards:[] },
 
     { platforms:[ {x:-200,y:420,w:2200,h:40} ],
       ladders:[ {x:620,y:240,w:40,h:180}, {x:1320,y:240,w:40,h:180} ],
@@ -235,29 +193,23 @@
       hazards:[ {x:300,y:402,w:80,h:18},{x:540,y:402,w:80,h:18},{x:780,y:402,w:80,h:18},{x:1020,y:402,w:80,h:18},{x:1260,y:402,w:80,h:18},{x:1500,y:402,w:80,h:18} ] },
 
     { platforms:[ {x:-240,y:420,w:520,h:40}, {x:440,y:360,w:160,h:20}, {x:720,y:300,w:160,h:20}, {x:1000,y:260,w:160,h:20}, {x:1280,y:300,w:160,h:20}, {x:1560,y:360,w:160,h:20}, {x:1820,y:420,w:540,h:40} ],
-      ladders:[ {x:980,y:200,w:38,h:180} ],
-      goal:{x:2100,y:318,w:30,h:142},
+      ladders:[ {x:980,y:200,w:38,h:180} ], goal:{x:2100,y:318,w:30,h:142},
       hazards:[ {x:840,y:402,w:80,h:18}, {x:1400,y:402,w:80,h:18} ] },
 
     { platforms:[ {x:-200,y:420,w:600,h:40}, {x:520,y:320,w:260,h:22}, {x:860,y:280,w:260,h:22}, {x:1200,y:320,w:260,h:22}, {x:1540,y:420,w:680,h:40} ],
-      ladders:[ {x:1140,y:220,w:38,h:200} ],
-      goal:{x:2000,y:318,w:30,h:142},
+      ladders:[ {x:1140,y:220,w:38,h:200} ], goal:{x:2000,y:318,w:30,h:142},
       hazards:[ {x:780,y:402,w:60,h:18}, {x:1120,y:402,w:60,h:18} ] },
 
     { platforms:[ {x:-220,y:420,w:520,h:40}, {x:460,y:420,w:240,h:40}, {x:820,y:420,w:240,h:40}, {x:1180,y:420,w:240,h:40}, {x:1540,y:420,w:540,h:40} ],
-      ladders:[ {x:740,y:240,w:38,h:180}, {x:1100,y:240,w:38,h:180} ],
-      goal:{x:1900,y:318,w:30,h:142},
+      ladders:[ {x:740,y:240,w:38,h:180}, {x:1100,y:240,w:38,h:180} ], goal:{x:1900,y:318,w:30,h:142},
       hazards:[ {x:700,y:402,w:60,h:18}, {x:1060,y:402,w:60,h:18} ] },
 
     { platforms:[ {x:-220,y:420,w:520,h:40}, {x:440,y:360,w:120,h:18}, {x:640,y:310,w:120,h:18}, {x:840,y:360,w:120,h:18}, {x:1040,y:310,w:120,h:18}, {x:1240,y:360,w:120,h:18}, {x:1440,y:420,w:640,h:40} ],
-      ladders:[ {x:1000,y:210,w:34,h:200} ],
-      goal:{x:1920,y:318,w:30,h:142},
+      ladders:[ {x:1000,y:210,w:34,h:200} ], goal:{x:1920,y:318,w:30,h:142},
       hazards:[ {x:760,y:402,w:80,h:18} ] },
 
     { platforms:[ {x:-240,y:420,w:560,h:40}, {x:520,y:340,w:160,h:20}, {x:760,y:260,w:160,h:20}, {x:1000,y:180,w:160,h:20}, {x:1240,y:260,w:160,h:20}, {x:1480,y:340,w:160,h:20}, {x:1720,y:420,w:560,h:40} ],
-      ladders:[ {x:960,y:120,w:40,h:300} ],
-      goal:{x:2040,y:318,w:30,h:142},
-      hazards:[] },
+      ladders:[ {x:960,y:120,w:40,h:300} ], goal:{x:2040,y:318,w:30,h:142}, hazards:[] },
 
     // 10: Finale -> Credits
     { platforms:[ {x:-200,y:420,w:2400,h:40} ],
@@ -266,210 +218,273 @@
       hazards:[ {x:300,y:402,w:80,h:18},{x:500,y:402,w:80,h:18},{x:700,y:402,w:80,h:18},{x:900,y:402,w:80,h:18},{x:1100,y:402,w:80,h:18},{x:1300,y:402,w:80,h:18},{x:1500,y:402,w:80,h:18},{x:1700,y:402,w:80,h:18} ],
       credits:true },
   ];
-  let levelIndex=0; const cam={x:0,y:0}; let showCredits=false;
-  const hudEl = document.getElementById('hud');
+  let levelIndex=0; const cam={x:0,y:0};
 
   function aabb(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
-  function loadLevel(i){
-    showCredits = false;
-    levelIndex = (i+levels.length)%levels.length;
+  function pboxOf(ent){ return { x: ent.x-ent.w/2, y: ent.y-ent.h, w:ent.w, h:ent.h }; }
+
+  function groundYAt(x, solids){
+    let top=Infinity;
+    for (const s of solids) if (x>=s.x && x<=s.x+s.w) top=Math.min(top, s.y);
+    return top;
+  }
+  function hasGroundAt(x, y, solids){
+    return solids.some(s => x>=s.x && x<=s.x+s.w && Math.abs(s.y - y) <= 2);
+  }
+  function isWallAhead(ent, solids, facing){
+    const probe = { x: ent.x + facing*(ent.w/2), y: ent.y - ent.h + 4, w: 6, h: ent.h - 8 };
+    return solids.some(s => aabb(probe, s));
+  }
+
+  function spawnChaser(){
     const L = levels[levelIndex];
+    const behind = player.x - 150;
+    const gy = groundYAt(behind, L.platforms);
+    chaser.x = isFinite(gy) ? behind : player.x - 60;
+    chaser.y = isFinite(gy) ? gy - 5 : player.y;
+    chaser.dx=0; chaser.dy=0; chaser.onGround=false; chaser.onLadder=false; chaser.state='idle';
+    chaser.stuck=0; chaser.lastX=chaser.x; chaser.hopCD=0.2; chaser.sayT=0; chaser.sayCD=1+Math.random()*1.5;
+  }
+
+  function loadLevel(i){
+    showCredits=false; showGameOver=false;
+    levelIndex=(i+levels.length)%levels.length;
+    const L=levels[levelIndex];
     player.x = L.platforms[0].x + 80; player.y = L.platforms[0].y - 5;
     player.dx=0; player.dy=0; player.onGround=false; player.onLadder=false; player.state='idle';
     cam.x=0; cam.y=0;
     keys.left=keys.right=keys.upIntent=keys.downIntent=keys.jump=false;
     hudEl.textContent = `Level ${levelIndex+1} / ${levels.length}`;
+    spawnChaser();
     focusCanvas();
   }
 
-  // ===== Physics (X first, then Y) with ladder movement =====
-  function moveAndCollide(dt, solids){
+  // ===== Physics helpers (entity-agnostic) =====
+  function moveAndCollide(ent, intents, dt, solids){
     // Horizontal first
-    player.x += player.dx * dt;
-    collideAxis('x', solids);
+    ent.x += ent.dx * dt;
+    collideAxis(ent, 'x', solids);
 
-    // Vertical second (ladder overrides gravity displacement)
-    if (player.onLadder){
-      let vy = 0;
-      if (keys.upIntent)   vy -= CLIMB_SPEED;
-      if (keys.downIntent) vy += CLIMB_SPEED;
-      player.y += vy * dt;
-      player.dy = 0;
+    // Vertical (ladder overrides gravity displacement)
+    if (ent.onLadder){
+      let vy=0; if (intents.up) vy-=CLIMB_SPEED; if (intents.down) vy+=CLIMB_SPEED;
+      ent.y += vy*dt; ent.dy = 0;
     } else {
-      player.y += player.dy * dt;
+      ent.y += ent.dy * dt;
     }
-
-    player.onGround = false;
-    collideAxis('y', solids);
+    ent.onGround=false;
+    collideAxis(ent, 'y', solids);
   }
 
-  function collideAxis(axis, solids){
-    const inset = (axis === 'x') ? 1 : 0;
-    const box = {
-      x: player.x - player.w/2,
-      y: player.y - player.h + inset,
-      w: player.w,
-      h: player.h - inset*2
-    };
+  function collideAxis(ent, axis, solids){
+    const inset = (axis==='x')?1:0;
+    const box={ x:ent.x-ent.w/2, y:ent.y-ent.h+inset, w:ent.w, h:ent.h-inset*2 };
     for (const s of solids){
       const hit = (box.x < s.x + s.w) && (box.x + box.w > s.x) &&
                   (box.y < s.y + s.h) && (box.y + box.h > s.y);
       if (!hit) continue;
-      if (axis === 'x'){
-        if (player.dx > 0){ box.x = s.x - box.w; player.x = box.x + player.w/2; player.dx = 0; }
-        else if (player.dx < 0){ box.x = s.x + s.w; player.x = box.x + player.w/2; player.dx = 0; }
+      if (axis==='x'){
+        if (ent.dx>0){ box.x=s.x-box.w; ent.x=box.x+ent.w/2; ent.dx=0; }
+        else if (ent.dx<0){ box.x=s.x+s.w; ent.x=box.x+ent.w/2; ent.dx=0; }
       } else {
-        if (player.dy > 0){ box.y = s.y - box.h; player.y = box.y + player.h; player.dy = 0; player.onGround = true; }
-        else if (player.dy < 0){ box.y = s.y + s.h; player.y = box.y + player.h; player.dy = 0; }
+        if (ent.dy>0){ box.y=s.y-box.h; ent.y=box.y+ent.h; ent.dy=0; ent.onGround=true; }
+        else if (ent.dy<0){ box.y=s.y+s.h; ent.y=box.y+ent.h; ent.dy=0; }
       }
     }
   }
 
+  // ===== Update =====
   function update(dt){
-    if (showCredits){
-      if (keys.restart){ loadLevel(0); keys.restart=false; }
+    if (showCredits || showGameOver){
+      if (keys.restart){ loadLevel(showCredits?0:levelIndex); keys.restart=false; }
       return;
     }
-    // horizontal input
-    if (keys.left)  { player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing = -1; }
-    if (keys.right) { player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing =  1; }
+
+    const L = levels[levelIndex];
+
+    // --- PLAYER CONTROL ---
+    if (keys.left){ player.dx = Math.max(player.dx - accel*dt, -MAX_DX); player.facing=-1; }
+    if (keys.right){ player.dx = Math.min(player.dx + accel*dt,  MAX_DX); player.facing= 1; }
     if (!keys.left && !keys.right) player.dx *= Math.pow(0.0001, dt);
 
-    // gravity
     if (!player.onLadder) player.dy += G*dt;
 
-    // JUMP: from ground OR (NEW) from ladder
+    // Jump from ground OR ladder
     if (keys.jump){
-      if (player.onGround){
-        player.dy = -JUMP_VY; player.onGround=false;
-      } else if (player.onLadder){
-        // ladder jump: release ladder and leap
-        player.onLadder = false;
-        player.dy = -JUMP_VY * 1.0; // tweak multiplier if you want stronger ladder jumps
-      }
-      // don't auto-clear keys.jump; user releases button
+      if (player.onGround){ player.dy = -JUMP_VY; player.onGround=false; }
+      else if (player.onLadder){ player.onLadder=false; player.dy = -JUMP_VY; }
     }
 
-    // Ladder detection
-    const L = levels[levelIndex];
-    const pbox = { x: player.x- player.w/2 + 6, y: player.y- player.h, w: player.w-12, h: player.h };
+    // Ladder detection (player)
+    const pbox = pboxOf(player);
     const touchingLadder = L.ladders?.some(ld => aabb(pbox, ld));
     if (!player.onLadder){
       if (touchingLadder && (keys.upIntent || keys.downIntent)){
-        player.onLadder = true;
-        const ld = L.ladders.find(ld => aabb(pbox, ld));
+        player.onLadder=true;
+        const ld = L.ladders.find(ld=>aabb(pbox,ld));
         if (ld){ player.x = Math.max(ld.x + player.w/2, Math.min(ld.x + ld.w - player.w/2, player.x)); }
       }
     } else {
-      // If we step out of ladder bounds, drop off it
-      if (!touchingLadder) player.onLadder = false;
+      if (!touchingLadder) player.onLadder=false;
     }
 
-    moveAndCollide(dt, L.platforms);
+    moveAndCollide(player, {up:keys.upIntent, down:keys.downIntent}, dt, L.platforms);
 
-    // hazards / goal / fall reset
-    if (L.hazards.some(h => aabb(pbox, h))) loadLevel(levelIndex);
-    if (aabb(pbox, L.goal)){
-      if (L.credits){ showCredits = true; }
-      else { loadLevel(levelIndex+1); }
-    }
+    // hazards/goal/fall
+    if (L.hazards.some(h=>aabb(pboxOf(player),h))) loadLevel(levelIndex);
+    if (aabb(pboxOf(player), L.goal)){ if (L.credits) showCredits=true; else loadLevel(levelIndex+1); }
     if (player.y > cvs.height + 600) loadLevel(levelIndex);
 
-    // camera follow
+    // --- CHASER AI ---
+    chaser.hopCD = Math.max(0, chaser.hopCD - dt);
+    chaser.sayT  = Math.max(0, chaser.sayT  - dt);
+    chaser.sayCD = Math.max(0, chaser.sayCD - dt);
+
+    // choose intents
+    const desireRight = player.x > chaser.x + 4;
+    const desireLeft  = player.x < chaser.x - 4;
+    if (desireLeft)  { chaser.dx = Math.max(chaser.dx - accel*0.9*dt, -MAX_DX*0.9); chaser.facing=-1; }
+    if (desireRight) { chaser.dx = Math.min(chaser.dx + accel*0.9*dt,  MAX_DX*0.9); chaser.facing= 1; }
+    if (!desireLeft && !desireRight) chaser.dx *= Math.pow(0.0001, dt);
+
+    if (!chaser.onLadder) chaser.dy += G*dt;
+
+    // AI ladder use: if near/inside ladder and vertical offset significant, climb
+    const cbox = pboxOf(chaser);
+    const touchingLadderC = L.ladders?.some(ld => aabb(cbox, ld));
+    let cUp=false, cDown=false;
+    if (touchingLadderC){
+      if (player.y < chaser.y - 24) { chaser.onLadder=true; cUp=true; }
+      else if (player.y > chaser.y + 24) { chaser.onLadder=true; cDown=true; }
+    } else if (chaser.onLadder && !touchingLadderC){
+      chaser.onLadder=false;
+    }
+
+    // --- GAP/WALL DETECTOR + HOP ---
+    if (chaser.onGround && chaser.hopCD<=0 && !chaser.onLadder){
+      const f = chaser.facing || (desireRight?1:-1);
+      const ahead1 = chaser.x + f*(chaser.w/2 + 10);
+      const ahead2 = chaser.x + f*(chaser.w/2 + 30);
+      const gapAhead = !hasGroundAt(ahead1, chaser.y, L.platforms) || !hasGroundAt(ahead2, chaser.y, L.platforms);
+      const wallAhead = isWallAhead(chaser, L.platforms, f);
+      if (gapAhead || wallAhead){
+        chaser.dy = -JUMP_VY*0.86; // hop strength
+        chaser.onGround = false;
+        chaser.hopCD = 0.35;       // limit hop spam
+      }
+    }
+
+    moveAndCollide(chaser, {up:cUp, down:cDown}, dt, L.platforms);
+
+    // Chaser catchup if stuck or fell
+    const moved = Math.abs(chaser.x - chaser.lastX) > 1;
+    chaser.stuck = moved ? 0 : (chaser.stuck + dt);
+    chaser.lastX = chaser.x;
+    if (chaser.y > cvs.height + 800 || chaser.stuck > 3){
+      spawnChaser();
+    }
+
+    // Tag = game over
+    if (aabb(pboxOf(player), pboxOf(chaser))) showGameOver=true;
+
+    // Occasional speech bubble (when within range)
+    const near = Math.abs(chaser.x - player.x) < 500;
+    if (near && chaser.sayCD<=0){
+      chaser.sayT = 1.4;                            // visible for ~1.4s
+      chaser.sayCD = 3 + Math.random()*3;           // every ~3–6s
+    }
+
+    // camera
     const targetX = player.x - cvs.width*0.35; cam.x += (targetX - cam.x) * Math.min(1, dt*5);
 
-    // animation state
-    if (player.onLadder) player.state = 'climb';
-    else if (keys.downIntent && player.onGround) player.state = 'duck';
-    else if (!player.onGround) player.state = 'air';
-    else if (Math.abs(player.dx)>40) player.state = 'run';
-    else player.state = 'idle';
-    player.animTime += dt;
+    // states
+    player.state = player.onLadder?'climb': (keys.downIntent&&player.onGround?'duck': (!player.onGround?'air': (Math.abs(player.dx)>40?'run':'idle')));
+    chaser.state = chaser.onLadder?'climb': (!chaser.onGround?'air': (Math.abs(chaser.dx)>40?'run':'idle'));
+    player.animTime += dt; chaser.animTime += dt;
   }
 
-  // --- Rounded rect helper ---
+  // --- Drawing helpers ---
   function rr(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r);
     g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
 
-  function drawPlatform(p){
-    ctx.fillStyle = 'rgba(0,0,0,.12)'; rr(ctx, p.x+3, p.y+6, p.w, p.h, 10); ctx.fill();
-    ctx.fillStyle = '#67b95b'; rr(ctx, p.x, p.y, p.w, p.h, 10); ctx.fill();
-    ctx.fillStyle = '#4a8f42'; rr(ctx, p.x, p.y, p.w, Math.min(6,p.h), 10); ctx.fill();
+  function drawPlatform(p){ ctx.fillStyle='rgba(0,0,0,.12)'; rr(ctx,p.x+3,p.y+6,p.w,p.h,10); ctx.fill(); ctx.fillStyle='#67b95b';
+    rr(ctx,p.x,p.y,p.w,p.h,10); ctx.fill(); ctx.fillStyle='#4a8f42'; rr(ctx,p.x,p.y,p.w,Math.min(6,p.h),10); ctx.fill(); }
+
+  function drawLadder(ld){ ctx.fillStyle='#caa96a'; ctx.fillRect(ld.x+6, ld.y, 8, ld.h); ctx.fillRect(ld.x+ld.w-14, ld.y, 8, ld.h);
+    for(let r=0;r<Math.floor(ld.h/20);r++){ const ry=ld.y+r*20+8; ctx.fillRect(ld.x+12, ry, ld.w-24, 4); } }
+
+  function drawSpikeStrip(x,y,w,h){ const n=Math.max(1,Math.floor(w/12));
+    for(let i=0;i<n;i++){ const sx=x+i*(w/n); ctx.fillStyle='#e04a4a'; ctx.beginPath(); ctx.moveTo(sx,y+h); ctx.lineTo(sx+(w/n)/2,y); ctx.lineTo(sx+(w/n),y+h); ctx.closePath(); ctx.fill(); } }
+
+  function drawCloud(x,y,s){ ctx.fillStyle='rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(x,y,16*s,0,Math.PI*2);
+    ctx.arc(x+20*s,y-6*s,14*s,0,Math.PI*2); ctx.arc(x+40*s,y,18*s,0,Math.PI*2); ctx.fill(); }
+
+  function drawEntity(ent, set){
+    let img=set.idle; if (ent.state==='run'||ent.state==='air') img=set.run; else if (ent.state==='duck') img=set.duck; else if (ent.state==='climb') img=set.climb;
+    const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height, s=SPRITE_H/fh;
+    ctx.save(); ctx.translate(ent.x, ent.y); ctx.scale(ent.facing*s, s); ctx.translate(-fw/2, -fh); ctx.imageSmoothingEnabled=false; ctx.drawImage(img,0,0); ctx.restore();
   }
 
-  function drawLadder(ld){
-    ctx.fillStyle='#caa96a'; ctx.fillRect(ld.x+6, ld.y, 8, ld.h);
-    ctx.fillRect(ld.x+ld.w-14, ld.y, 8, ld.h);
-    for(let r=0;r<Math.floor(ld.h/20);r++){ const ry = ld.y + r*20 + 8; ctx.fillRect(ld.x+12, ry, ld.w-24, 4); }
-  }
-
-  function drawCloud(x,y,s){
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    ctx.beginPath();
-    ctx.arc(x, y, 16*s, 0, Math.PI*2);
-    ctx.arc(x+20*s, y-6*s, 14*s, 0, Math.PI*2);
-    ctx.arc(x+40*s, y, 18*s, 0, Math.PI*2);
-    ctx.fill();
-  }
-
-  function drawSpikeStrip(x,y,w,h){
-    const n = Math.max(1, Math.floor(w/12));
-    for(let i=0;i<n;i++){
-      const sx = x + i*(w/n); ctx.fillStyle = '#e04a4a'; ctx.beginPath();
-      ctx.moveTo(sx, y+h); ctx.lineTo(sx + (w/n)/2, y); ctx.lineTo(sx + (w/n), y+h); ctx.closePath(); ctx.fill();
-    }
+  function speechBubble(x,y,text){
+    ctx.font='14px system-ui, sans-serif'; const pad=8; const tw=ctx.measureText(text).width;
+    const bw=tw+pad*2, bh=28; const bx = x - bw/2, by = y - 60;
+    ctx.fillStyle='rgba(0,0,0,.5)'; rr(ctx, bx+2, by+2, bw, bh, 10); ctx.fill();
+    ctx.fillStyle='#fff'; rr(ctx, bx, by, bw, bh, 10); ctx.fill();
+    ctx.fillStyle='#111'; ctx.textAlign='center'; ctx.fillText(text, x, by + 18);
+    ctx.beginPath(); ctx.moveTo(x-6, by+bh); ctx.lineTo(x+6, by+bh); ctx.lineTo(x, by+bh+8); ctx.closePath(); ctx.fill();
   }
 
   function drawCredits(){
-    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(0,0,cvs.width,cvs.height);
-    const cardW = Math.min(520, cvs.width - 60), cardH = 220;
-    const x = (cvs.width - cardW)/2, y = (cvs.height - cardH)/2;
-    ctx.fillStyle = '#ffffffee'; rr(ctx, x, y, cardW, cardH, 16); ctx.fill();
-    ctx.fillStyle = '#111'; ctx.textAlign = 'center';
-    ctx.font = 'bold 36px system-ui, sans-serif'; ctx.fillText('Credits', cvs.width/2, y + 64);
-    ctx.font = '20px system-ui, sans-serif'; ctx.fillText('a special thanks to Nate and Matt', cvs.width/2, y + 108);
-    ctx.font = '16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y + 160);
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,cvs.width,cvs.height);
+    const cardW=Math.min(520,cvs.width-60), cardH=220, x=(cvs.width-cardW)/2, y=(cvs.height-cardH)/2;
+    ctx.fillStyle='#ffffffee'; rr(ctx,x,y,cardW,cardH,16); ctx.fill();
+    ctx.fillStyle='#111'; ctx.textAlign='center';
+    ctx.font='bold 36px system-ui, sans-serif'; ctx.fillText('Credits', cvs.width/2, y+64);
+    ctx.font='20px system-ui, sans-serif'; ctx.fillText('a special thanks to Nate and Matt', cvs.width/2, y+108);
+    ctx.font='16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y+160);
+  }
+
+  function drawGameOver(){
+    ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,cvs.width,cvs.height);
+    const cardW=Math.min(520,cvs.width-60), cardH=220, x=(cvs.width-cardW)/2, y=(cvs.height-cardH)/2;
+    ctx.fillStyle='#ffffffee'; rr(ctx,x,y,cardW,cardH,16); ctx.fill();
+    ctx.fillStyle='#111'; ctx.textAlign='center';
+    ctx.font='bold 40px system-ui, sans-serif'; ctx.fillText('GAME OVER', cvs.width/2, y+64);
+    const who = (currentChar==='matt') ? "Lil’ Nate" : "Matt the Shark";
+    ctx.font='20px system-ui, sans-serif'; ctx.fillText(`Caught by ${who}!`, cvs.width/2, y+108);
+    ctx.font='16px system-ui, sans-serif'; ctx.fillText('Press R or Tap to Restart', cvs.width/2, y+160);
   }
 
   function draw(){
     ctx.clearRect(0,0,cvs.width,cvs.height);
-    // Sky gradient
-    const grd = ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle=grd; ctx.fillRect(0,0,cvs.width,cvs.height);
-    // Clouds
-    for(let i=0;i<6;i++){ drawCloud((i*260 - (cam.x*0.2)%1560), 80 + (i%2)*24, 1+(i%3)*0.2); }
+    const grd=ctx.createLinearGradient(0,0,0,cvs.height); grd.addColorStop(0,'#aee2ff'); grd.addColorStop(1,'#d9f4ff'); ctx.fillStyle=grd; ctx.fillRect(0,0,cvs.width,cvs.height);
+    for(let i=0;i<6;i++) drawCloud((i*260 - (cam.x*0.2)%1560), 80+(i%2)*24, 1+(i%3)*0.2);
 
     ctx.save(); ctx.translate(-cam.x,0);
-    const L = levels[levelIndex];
-
-    // platforms / ladders / hazards / goal
+    const L=levels[levelIndex];
     for (const p of L.platforms) drawPlatform(p);
     if (L.ladders) for (const ld of L.ladders) drawLadder(ld);
-    for (const s of L.hazards) drawSpikeStrip(s.x, s.y, s.w, s.h);
-    const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d'; ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+6+36,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
+    for (const s of L.hazards) drawSpikeStrip(s.x,s.y,s.w,s.h);
+    const g=L.goal; ctx.fillStyle='#ffcc00'; ctx.fillRect(g.x,g.y,6,g.h); ctx.fillStyle='#ff5d5d';
+    ctx.beginPath(); ctx.moveTo(g.x+6,g.y+8); ctx.lineTo(g.x+42,g.y+18); ctx.lineTo(g.x+6,g.y+28); ctx.closePath(); ctx.fill();
 
-    // sprite (scaled to consistent height) — uses ACTIVE set from selected character
-    let img=ACTIVE.idle;
-    if (player.state==='run' || player.state==='air') img=ACTIVE.run;
-    else if (player.state==='duck') img=ACTIVE.duck;
-    else if (player.state==='climb') img=ACTIVE.climb;
-    const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height;
-    const s = SPRITE_H / fh;
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.scale(player.facing * s, s);
-    ctx.translate(-fw/2, -fh);
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(img,0,0);
-    ctx.restore();
+    // draw chaser first, then player
+    drawEntity(chaser, CHASER_SET);
+    drawEntity(player, ACTIVE);
+    // occasional speech
+    if (chaser.sayT > 0){
+      speechBubble(chaser.x, chaser.y - 20, chaseLine);
+    }
 
     ctx.restore();
 
     if (showCredits) drawCredits();
+    if (showGameOver) drawGameOver();
   }
 
   // ===== Loop =====
   let lastTs;
-  function loop(ts){ const dt = Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
+  function loop(ts){ const dt=Math.min(1/30, (ts-(lastTs||ts))/1000); lastTs=ts; update(dt); draw(); requestAnimationFrame(loop); }
 
   // ===== Character select wiring =====
   const selectScreen = document.getElementById('selectScreen');
@@ -477,41 +492,36 @@
   const natePortrait = document.getElementById('natePortrait');
 
   function drawPortrait(canvas, img){
-    const g = canvas.getContext('2d');
-    g.clearRect(0,0,canvas.width,canvas.height);
-    const fw = img.naturalWidth||img.width, fh = img.naturalHeight||img.height;
-    const s = Math.min(canvas.height / fh, canvas.width / fw) * 0.9;
-    g.imageSmoothingEnabled = false;
-    g.save(); g.translate(canvas.width/2, canvas.height*0.95); g.scale(s,s); g.translate(-fw/2, -fh); g.drawImage(img,0,0); g.restore();
+    const g=canvas.getContext('2d'); g.clearRect(0,0,canvas.width,canvas.height);
+    const fw=img.naturalWidth||img.width, fh=img.naturalHeight||img.height; const s=Math.min(canvas.height/fh, canvas.width/fw)*0.9;
+    g.imageSmoothingEnabled=false; g.save(); g.translate(canvas.width/2, canvas.height*0.95); g.scale(s,s); g.translate(-fw/2,-fh); g.drawImage(img,0,0); g.restore();
   }
-
-  function showSelect(){
-    drawPortrait(mattPortrait, SPRITES.matt.idle);
-    drawPortrait(natePortrait, SPRITES.nate.idle);
-    selectScreen.classList.add('show');
-  }
+  function showSelect(){ drawPortrait(mattPortrait, SPRITES.matt.idle); drawPortrait(natePortrait, SPRITES.nate.idle); selectScreen.classList.add('show'); }
 
   for (const btn of document.querySelectorAll('.charBtn')){
     btn.addEventListener('click', ()=>{
       currentChar = btn.dataset.char;
-      ACTIVE = SPRITES[currentChar];
+      if (currentChar==='matt'){ ACTIVE=SPRITES.matt; CHASER_SET=SPRITES.nate; chaseLine="Fix Epicor!"; }
+      else { ACTIVE=SPRITES.nate; CHASER_SET=SPRITES.matt; chaseLine="Stop Making Bad Cables"; }
       selectScreen.classList.remove('show');
       loadLevel(0);
       requestAnimationFrame(loop);
     });
   }
 
-  // Start flow: Start image -> load sprites -> show select -> pick char -> start loop
+  // Start -> load sprites -> choose character
   document.getElementById('startImage').addEventListener('click', async ()=>{
     document.getElementById('startScreen').classList.add('hidden');
     await ensureSprites();
-    ACTIVE = SPRITES.matt; // default until player chooses
+    ACTIVE = SPRITES.matt; // temporary until pick
+    CHASER_SET = SPRITES.nate;
     showSelect();
   }, { passive:true });
 
-  // Tap anywhere to restart while on credits
+  // Tap anywhere to restart while overlay visible
   document.addEventListener('pointerdown', ()=>{
-    if (showCredits) loadLevel(0);
+    if (showCredits){ loadLevel(0); }
+    if (showGameOver){ loadLevel(levelIndex); }
   }, { passive:true });
 
   // Prevent pull-to-refresh / bounce on mobile
