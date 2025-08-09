@@ -104,6 +104,9 @@
     </div>
   </div>
 
+  <!-- BGM (autoplay starts right after character select click) -->
+  <audio id="bgm" src="assets/jawsome-loop.wav" loop preload="auto" playsinline></audio>
+
   <script>
   // ===== Canvas =====
   const cvs = document.getElementById('game');
@@ -129,6 +132,16 @@
     for (const k of ['idle','run','duck','climb']) if (!target[k]) target[k] = single || fallback(`${prefix}-${k}`);
   }
   async function ensureSprites(){ await loadSet('shark', null, SPRITES.matt); await loadSet('nate', 'nate.png', SPRITES.nate); }
+
+  // ===== Audio =====
+  const bgm = document.getElementById('bgm');
+  bgm.volume = 0.6; // tweak if you want a different default
+  function playBgm(){ if (bgm.paused){ bgm.currentTime = 0; const p = bgm.play(); if (p && p.catch) p.catch(()=>{}); } }
+  function stopBgm(){ try{ bgm.pause(); }catch{} }
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.hidden) stopBgm();
+    else if (running && !showCredits && !showGameOver) playBgm();
+  });
 
   // ===== Input =====
   const keys = { left:false, right:false, upIntent:false, downIntent:false, jump:false, restart:false };
@@ -227,14 +240,12 @@
   function groundYAt(x, solids){ let top=Infinity; for (const s of solids) if (x>=s.x && x<=s.x+s.w) top=Math.min(top, s.y); return top; }
   function hasGroundAt(x, y, solids){ return solids.some(s => x>=s.x && x<=s.x+s.w && Math.abs(s.y - y) <= 2); }
   function isWallAhead(ent, solids, facing){ const probe = { x: ent.x + facing*(ent.w/2), y: ent.y - ent.h + 4, w: 6, h: ent.h - 8 }; return solids.some(s => aabb(probe, s)); }
-
-  // Estimate distance (px) from a point to next landable ground in dir (+1/-1)
   function gapDistanceFrom(x0, dir, curY, solids){
     for (let d = 0; d <= 260; d += 10) {
       const gy = groundYAt(x0 + dir * d, solids);
       if (isFinite(gy) && Math.abs(gy - curY) <= 120) return d;
     }
-    return 300; // big/no landing
+    return 300;
   }
 
   // ===== Spawning & levels =====
@@ -250,9 +261,7 @@
     chaser.x = x; chaser.y = gy - 5;
     chaser.dx=0; chaser.dy=0; chaser.onGround=false; chaser.onLadder=false; chaser.state='idle';
     chaser.stuck=0; chaser.lastX=chaser.x; chaser.hopCD=0.2; chaser.sayT=0; chaser.sayCD=1+Math.random()*1.5;
-    chaser.spawnGrace = 1.25; // AI sleeps a moment
-    chaser.tagGrace   = 2.00; // can't tag immediately
-    chaser.coyote = 0;
+    chaser.spawnGrace = 1.25; chaser.tagGrace = 2.00; chaser.coyote = 0;
   }
 
   function loadLevel(i){
@@ -266,6 +275,7 @@
     hudEl.textContent = `Level ${levelIndex+1} / ${levels.length}`;
     spawnChaser();
     focusCanvas();
+    playBgm(); // ensure music is running on (re)start
   }
 
   // ===== Physics helpers (entity-agnostic) =====
@@ -325,7 +335,10 @@
 
     // hazards/goal/fall
     if (L.hazards.some(h=>aabb(pboxOf(player),h))) loadLevel(levelIndex);
-    if (aabb(pboxOf(player), L.goal)){ if (L.credits) showCredits=true; else loadLevel(levelIndex+1); }
+    if (aabb(pboxOf(player), L.goal)){
+      if (L.credits){ showCredits=true; stopBgm(); }
+      else loadLevel(levelIndex+1);
+    }
     if (player.y > cvs.height + 600) loadLevel(levelIndex);
 
     // --- CHASER AI ---
@@ -334,7 +347,6 @@
     chaser.sayCD = Math.max(0, chaser.sayCD - dt);
     chaser.spawnGrace = Math.max(0, chaser.spawnGrace - dt);
     chaser.tagGrace   = Math.max(0, chaser.tagGrace   - dt);
-    // coyote (after-leave-ground short window)
     if (chaser.onGround) chaser.coyote = 0.12; else chaser.coyote = Math.max(0, chaser.coyote - dt);
 
     if (chaser.spawnGrace <= 0){
@@ -354,7 +366,7 @@
         else if (player.y > chaser.y + 24) { chaser.onLadder=true; cDown=true; }
       } else if (chaser.onLadder && !touchingLadderC){ chaser.onLadder=false; }
 
-      // --- IMPROVED GAP/WALL HOP ---
+      // improved gap/wall hop
       if ((chaser.onGround || chaser.coyote > 0) && chaser.hopCD <= 0 && !chaser.onLadder){
         const f = chaser.facing || (desireRight?1:-1);
         const yTop = chaser.y;
@@ -374,7 +386,7 @@
           if (distToLand > 120) strength = 1.16;
 
           chaser.dy = -JUMP_VY * strength;
-          chaser.dx += f * 120; // horizontal nudge
+          chaser.dx += f * 120;
           chaser.dx = Math.max(-MAX_DX, Math.min(MAX_DX, chaser.dx));
 
           chaser.onGround = false;
@@ -385,7 +397,6 @@
 
       moveAndCollide(chaser, {up:cUp, down:cDown}, dt, L.platforms);
     } else {
-      // idle physics during spawn grace
       if (!chaser.onLadder) chaser.dy += G*dt;
       moveAndCollide(chaser, {up:false, down:false}, dt, L.platforms);
     }
@@ -397,7 +408,7 @@
     if (chaser.y > cvs.height + 800 || chaser.stuck > 3){ spawnChaser(); }
 
     // Tag = game over (respect tag grace)
-    if (chaser.tagGrace<=0 && aabb(pboxOf(player), pboxOf(chaser))) showGameOver=true;
+    if (chaser.tagGrace<=0 && aabb(pboxOf(player), pboxOf(chaser))) { showGameOver=true; stopBgm(); }
 
     // Occasional speech bubble (nearby & active)
     const near = Math.abs(chaser.x - player.x) < 500;
@@ -503,6 +514,7 @@
       selectScreen.classList.remove('show');
       loadLevel(0);
       running=true; requestAnimationFrame(loop);
+      playBgm(); // start the loop right after user selection (gesture = autoplay OK)
     });
   }
 
@@ -513,7 +525,8 @@
     booted = true;
     document.getElementById('startScreen').classList.add('hidden');
     await ensureSprites();
-    ACTIVE = SPRITES.matt; CHASER_SET = SPRITES.nate; // temp until pick
+    // preload audio as soon as we can
+    try { bgm.load(); } catch {}
     showSelect();
   }
   // start on click, pointer, or Enter/Space
